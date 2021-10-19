@@ -63,7 +63,6 @@ void Emitter::emitCircle()
 
     unsigned int id = numActiveParticles;
 
-
     if (numActiveParticles + pos.size() <= numActiveParticles + numParticles) // Se podría calcular al principio el numero de particulas que se emite cada vez y establecer un numero real del total de particulas que sea multiplo del grupo asi no habria que controlar esto
     {
         for (unsigned int i = 0; i < pos.size(); ++i)
@@ -85,7 +84,8 @@ void Emitter::emitCircle()
         fm -> setNumActiveParticles(numActiveParticles + pos.size());
         numParticles -= pos.size();
 
-        nextTimeEmit += 1.4 * dist / v;
+        nextTimeEmit += 1.1 * dist / v;
+        // 0.9 abajo
     }
 }
 
@@ -93,7 +93,7 @@ void Emitter::emitSquare() // Ver qué se puede dejar calculado en la inicializa
 {
     Simulation *sim = Simulation::getCurrent();
     Real particleRadius = sim -> getParticleRadius();
-    Real dist = particleRadius * pow(4.0 * M_PI / 3.0, 1.0 / 3.0);
+    Real dist = particleRadius * 2.0 /*pow(4.0 * M_PI / 3.0, 1.0 / 3.0)*/;
     unsigned int numActiveParticles = fm -> getNumActiveParticles();
 
     unsigned int numX = floor(width / dist);
@@ -127,6 +127,6 @@ void Emitter::emitSquare() // Ver qué se puede dejar calculado en la inicializa
         fm -> setNumActiveParticles(numActiveParticles + numX * numY);
         numParticles -= numX * numY;
 
-        nextTimeEmit += 1.4 * dist / v;
+        nextTimeEmit += 1.1 * dist / v;
     }
 }

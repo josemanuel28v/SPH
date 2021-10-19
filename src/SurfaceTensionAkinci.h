@@ -81,14 +81,14 @@ class SurfaceTensionAkinci: public NonPressureForce
 
                     Vector3r rij = ri - rj;
                     Real rijMag = glm::length(rij);
-                    Real k = 2.0 * density0 / (dens_i + dens_j);
+                    Real kij = 2.0 * density0 / (dens_i + dens_j);
 
                     if (rijMag > 0.0 && rijMag <= supportRadius)
                     {
                         cohesion  = - fm -> getMass(j) * Cohesion::W(rij) * rij / rijMag;
-                        curvature = - 2.0 * (ni - nj); // Se ha multiplicado por 2.0 porque da mejores resultados
+                        curvature = - 1.0 * (ni - nj); // Se ha multiplicado por 2.0 porque da mejores resultados
 
-                        ai += stCoef * k * (cohesion + curvature);
+                        ai += stCoef * kij * (cohesion + curvature);
                     }
                 );
 

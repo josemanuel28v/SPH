@@ -57,7 +57,7 @@ class ArtificialViscosity: public NonPressureForce
 				    const Real dens_j = fm -> getDensity(j);
                     const Real sqDist = length(rirj) * length(rirj);
 
-                    /*Real kij = 2 * density0 / (dens_i + dens_j);*/
+                    //Real kij = 2 * density0 / (dens_i + dens_j);
 
                     ai += /*kij **/ 10.0 * 0.1 * viscosity * (fm -> getMass(j) / dens_j) * dotProd / (sqDist + 0.01 * h2) * CubicSpline::gradW(rirj);
                 );

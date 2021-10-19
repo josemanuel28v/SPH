@@ -1358,19 +1358,19 @@ void simulationMain(int argc, char* argv[])
 
 	unsigned int kernelParticles = 27;
 	Real fps = 120;
-	Real timeStep = 0.0005;
+	Real timeStep = 0.0001;
 	Real maxTimeStep = 0.002;
 	Real minTimeStep = 0.000;
 	Real density0 = 1000;
-	Real stiffness = 50;
+	Real stiffness = 100;
 	Real gamma = 1;
 	Real eta = 0.0005;  // 0.05%
 	Real etaV = 0.001; // 0.1%
-	Real etaPCI = 0.01;
+	Real etaPCI = 0.01; // 1 %
 	Real viscosity = 0.01;
 	Real bViscosity = 0.0;
-	Real surften = 0.1;
-	Real beta = 20.0;
+	Real surften = 0.175;
+	Real beta = 1.0; // 10000
 	Real side = pow(particleVolume, 1.0 / 3.0); // Lado del cubo con el volumen recogido de blender
 	Real radius = side / 2.0;
 	particleVolume = pow(2.0 * radius, 3.0);
@@ -1439,28 +1439,28 @@ void simulationMain(int argc, char* argv[])
 
 	////////////////////// Emitter /////////////////////////////////
 	/*Matrix4r rot(1.0);
-	rot = glm::rotate(rot, M_PI, Vector3r(1.0, 0.0, 0.0));
-	//rot = glm::rotate(rot, M_PI * 0.5, Vector3r(0.0, 1.0, 0.0));
+	//rot = glm::rotate(rot, 0.5 * M_PI, Vector3r(1.0, 0.0, 0.0));
+	rot = glm::rotate(rot, M_PI * 0.5, Vector3r(0.0, 1.0, 0.0));
 
-	fm -> addEmitter(Emitter::CIRCLE_EMITTER, 
+	fm -> addEmitter(Emitter::SQUARE_EMITTER, 
 					 40000, 
-					 Vector3r(0.0, 0.0, 0.2), 
-					 2.3, 
+					 Vector3r(0.01, 0.0, 0.3), 
+					 3.0, 
 					 rot, 
 					 0.0, 
-					 0.05, 
-					 0.05);*/
+					 0.03, 
+					 0.03);
 
-	/*rot = glm::rotate(rot, M_PI, Vector3r(0.0, 1.0, 0.0));
+	rot = glm::rotate(rot, M_PI, Vector3r(0.0, 1.0, 0.0));
 
-	fm -> addEmitter(Emitter::CIRCLE_EMITTER, 
-					 12000, 
-					 Vector3r(0.3, 0.0, 0.5), 
-					 1.6, 
+	fm -> addEmitter(Emitter::SQUARE_EMITTER, 
+					 40000, 
+					 Vector3r(-0.01, 0.0, 0.3), 
+					 3.0, 
 					 rot, 
 					 0.0, 
-					 0.05, 
-					 0.05);*/
+					 0.03, 
+					 0.03);*/
 	////////////////////////////////////////////////////////////////////
 
 	//////////////////// Boundary Model ////////////////////////////////
@@ -1478,6 +1478,17 @@ void simulationMain(int argc, char* argv[])
 	// Escena personalizada
 	//createBoundaryScene(radius);
 
+	
+
+	// Sphere
+	/*std::vector<Vector3r> sphereBoundaryPoints = {Vector3r(0.0, 0.0, 0.18838)};
+	sim -> setBoundaryMethod(Simulation::AKINCI_BOUNDARY_METHOD);
+	AkinciBoundaryModel *abm2 = new AkinciBoundaryModel();
+	abm2 -> setRadius(0.53/2);
+	abm2 -> init(sphereBoundaryPoints);
+	sim -> addBoundaryModel(abm2);*/
+
+	// domain
 	sim -> setBoundaryMethod(Simulation::AKINCI_BOUNDARY_METHOD);
 	AkinciBoundaryModel *abm = new AkinciBoundaryModel();
 	abm -> init(boundaryPoints);
