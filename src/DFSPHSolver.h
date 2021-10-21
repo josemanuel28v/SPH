@@ -26,12 +26,13 @@ class DFSPHSolver: public SPHSolver
         unsigned int iterationsV;
 
         Real maxAcc;
+        
+        Real eps;
 
     public:
 
         void init();
         void step();
-        void stepAlt();
 
         void computeAlpha();
         void predictVelocities();

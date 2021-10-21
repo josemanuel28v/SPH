@@ -166,10 +166,6 @@ void main()
 			color = hsv2rgb(vec3(uParam, 0.6, 0.85)); // Velocities hsv
 			lightColor = vec4(adsColor(vec3(uModelViewMatrix * gWPos), normal, color), 1.0);
 			break;	
-
-		case 5: // Sin iluminacion
-			lightColor = vec4(1.0, 1.0, 1.0, 1.0);
-			break;	
 	}
 	
 	vec4 texColor = texture(uSpriteTex, gTexCoord);

@@ -12,7 +12,6 @@
 #include "HashTable.h"
 
 // Loop over neighborhood
-
 #define forall_fluid_neighbors(code) \
     for (auto & pointInfo: grid -> table[cellId].neighbors) \
     { \
@@ -68,11 +67,10 @@ class Simulation
         std::vector<BoundaryModel*> boundaryModels;
 
         SPHSolver *solver;
-        HashTable *grid; // Ver si es su mejor sitio
+        HashTable *grid;
 
         TimeManager tm;
 
-        unsigned int kernelParticles;
         Real particleRadius;
         Real supportRadius;
         Vector3r gravity;
@@ -112,10 +110,12 @@ class Simulation
         // Kernel value method
         const static int POLY6_KERNEL_METHOD;
         const static int SPIKY_KERNEL_METHOD;
+        const static int CUBIC_KERNEL_METHOD;
         
         // Kernel gradient method
         const static int POLY6_GRADIENT_METHOD;
         const static int SPIKY_GRADIENT_METHOD;
+        const static int CUBIC_GRADIENT_METHOD;
 
         // Kernel laplacian method
         const static int SPLINE_LAPLACIAN_METHOD;
@@ -135,11 +135,12 @@ class Simulation
         void initGrid();
 
         // Setters
-        void setKernelParticles(const int kernelParticles) { this -> kernelParticles = kernelParticles; }
         void setParticleRadius(Real);
         void setSupportRadius(Real);
         void setGravity(Vector3r gravity) { this -> gravity = gravity; }
         void setTime(Real time) { tm.setTime(time); }
+        void setStartTime(Real startTime) { tm.setStartTime(startTime); }
+        void setEndTime(Real endTime) { tm.setEndTime(endTime); }
         void setTimeStep(Real ts) { tm.setTimeStep(ts); }
         void setFPS(Real fps) { tm.setFPS(fps); }
         void setMinTimeStep(Real minTs) { tm.setMinTimeStep(minTs); }
@@ -155,15 +156,15 @@ class Simulation
         void setAdhesionMethod(const int method) { current_adhesion_method = method; }
 
         // Getters
-        unsigned int getKernelParticles() { return kernelParticles; }
         Real getParticleRadius() { return particleRadius; }
         Real getSupportRadius() { return supportRadius; }
         Vector3r getGravity() { return gravity; }
         Real getTime() { return tm.getTime(); }
+        Real getStartTime() { return tm.getStartTime(); }
+        Real getEndTime() { return tm.getEndTime(); }
         Real getTimeStep() { return tm.getTimeStep(); }
-        void startCounting() { tm.startCounting(); }
-        void stopCounting() { tm.stopCounting(); }
-        Real getInterval() { return tm.getInterval(); }
+        void startCounting(std::string name) { tm.startCounting(name); }
+        void stopCounting(std::string name) { tm.stopCounting(name); }
         Real getMinTimeStep() { return tm.getMinTimeStep(); }
         Real getMaxTimeStep() { return tm.getMaxTimeStep(); }
 
@@ -181,7 +182,7 @@ class Simulation
         const unsigned int numberFluidModels() { return fluidModels.size(); }
         const unsigned int numberBoundaryModels() { return boundaryModels.size(); }
 
-        void addFluidModel(std::vector<Vector3r>&, std::vector<Vector3r>&);
+        FluidModel* addFluidModel(std::vector<Vector3r>&, std::vector<Vector3r>&);
         FluidModel* getFluidModel(const unsigned int i) { return fluidModels[i]; }
 
         void addBoundaryModel(BoundaryModel*);
@@ -191,6 +192,10 @@ class Simulation
         __attribute__((always_inline)) Real W(const Vector3r & r) { return value(r); }
         __attribute__((always_inline)) Vector3r gradW(const Vector3r & r) { return grad(r); }
         __attribute__((always_inline)) Real laplW(const Vector3r & r) { return lapl(r); }
+
+        void computeNonPressureForces();
+
+        void printInfo();
 
         void emitParticles();
 

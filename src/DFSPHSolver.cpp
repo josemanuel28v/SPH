@@ -15,178 +15,92 @@ void DFSPHSolver::init()
     maxIterations = 100;
     sumIterationsV = 0;
 
+    eps = 1e-5;
+
     resizeData();
 
     SPHSolver::init();
 
-    //insertFluid(AndBoundary)Particles
     insertFluidParticles();
-    // searchNeighborhood
     neighborhoodSearch();
-    // computeDensities
     computeDensities();
-    // computeAlpha
     computeAlpha();
 }
 
 void DFSPHSolver::step()
 {
-    steps ++;
     Simulation *sim = Simulation::getCurrent();
-    unsigned int nFluidModels = sim -> numberFluidModels();
+    steps ++;
+    
+    sim -> startCounting("npForces         ");
+    sim -> computeNonPressureForces();
+    sim -> stopCounting("npForces         ");
 
-    // compute nonpressure forces
-    for (unsigned int i = 0; i < nFluidModels; ++i)
-    {
-        FluidModel *fm = sim -> getFluidModel(i);
-        unsigned int nNonPressureForces = fm -> numberNonPressureForces();
-
-        for (unsigned int j = 0; j < nNonPressureForces; ++j)
-        {
-            NonPressureForce *force = fm -> getNonPressureForce(j);
-            
-            force -> step();
-        }
-    }
-
-    // adapt timestep
     updateTimeStep();
 
-    // predict velocities
-    predictVelocities(); // cuidado: necesita las normales calculadas en predictPositions() y si se calcula fuerza de st se sobreescriben
-                         // en el primer step las normales estaran a 0 pero igualmente las velocidades tambien estaran a 0 entonces no pasaria nada
-                         // y a la siguiente vuelta ya se habran calculado las normales en predictPositions()
+    predictVelocities(); 
 
-    // aqui corregir velocidad?
     if (sim -> getBoundaryHandlingMethod() == Simulation::PCISPH_BOUNDARY_METHOD)
         for (unsigned int nBoundary = 0; nBoundary < sim -> numberBoundaryModels(); ++nBoundary)
         {
             PCISPHBoundaryModel* bm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nBoundary));
 
-            bm -> correctVelocities();
+            bm -> correctVelocities(); // cuidado: necesita las normales calculadas en predictPositions() y si se calcula fuerza de st se sobreescriben
+                                       // en el primer step las normales estaran a 0 pero igualmente las velocidades tambien estaran a 0 entonces no pasaria nada
+                                       // y a la siguiente vuelta ya se habran calculado las normales en predictPositions()
         }
 
-    // correctDensityError()
+    sim -> startCounting("Density solver   ");
     correctDensityError();
+    sim -> stopCounting("Density solver   ");
 
-    // updatePositions
     updatePositions();
 
-    // aqui corregir posicion?
     if (sim -> getBoundaryHandlingMethod() == Simulation::PCISPH_BOUNDARY_METHOD)
+    {
+        sim -> startCounting("Boundary handling");
         for (unsigned int nBoundary = 0; nBoundary < sim -> numberBoundaryModels(); ++nBoundary)
         {
             PCISPHBoundaryModel* bm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nBoundary));
 
             bm -> correctPositions();
         }
+        sim -> stopCounting("Boundary handling");
+    }
 
     sim -> emitParticles();
 
-    //insertFluid(AndBoundary)Particles
+    sim -> startCounting("Fill grid        ");
     insertFluidParticles();
-    // searchNeighborhood
+    sim -> stopCounting("Fill grid        ");
+
+    sim -> startCounting("Neigh search     ");
     neighborhoodSearch();
+    sim -> stopCounting("Neigh search     ");
 
-    // computeDensities
+    sim -> startCounting("Densities        ");
     computeDensities();
-    // computeAlpha
+    sim -> stopCounting("Densities        ");    
+
+    sim -> startCounting("Alpha factor     ");
     computeAlpha();
+    sim -> stopCounting("Alpha factor     ");
 
-    // correctDivergenceError
+    sim -> startCounting("Divergence solver");
     correctDivergenceError();
+    sim -> stopCounting("Divergence solver");
 
-    // boundary handling
-    sim -> startCounting();
     if (sim -> getBoundaryHandlingMethod() == Simulation::CUBE_BOUNDARY_METHOD)
-        for (unsigned int nBoundary = 0; nBoundary < sim -> numberBoundaryModels(); ++nBoundary)
-        {
-            CubeBoundaryModel* bm = static_cast<CubeBoundaryModel*>(sim -> getBoundaryModel(nBoundary));
-
-            bm -> correctPositionAndVelocity();
-        }
-
-    
-
-    sim -> setTime(sim -> getTime() + sim -> getTimeStep());
-
-    std::cout << "Avg time step " << sim -> getTime() / steps << std::endl;
-}
-
-void DFSPHSolver::stepAlt()
-{
-    steps++;
-    Simulation *sim = Simulation::getCurrent();
-    unsigned int nFluidModels = sim -> numberFluidModels();
-
-    //insertFluid(AndBoundary)Particles
-    insertFluidParticles();
-    // searchNeighborhood
-    neighborhoodSearch();
-
-    // computeDensities
-    computeDensities();
-    // computeAlpha
-    computeAlpha();
-
-    // correctDivergenceError
-    correctDivergenceError();
-
-    // compute nonpressure forces
-    for (unsigned int i = 0; i < nFluidModels; ++i)
     {
-        FluidModel *fm = sim -> getFluidModel(i);
-        unsigned int nNonPressureForces = fm -> numberNonPressureForces();
-
-        for (unsigned int j = 0; j < nNonPressureForces; ++j)
-        {
-            NonPressureForce *force = fm -> getNonPressureForce(j);
-            
-            force -> step();
-        }
-    }
-
-    // adapt timestep
-    updateTimeStep();
-
-    // predict velocities
-    predictVelocities(); // cuidado: necesita las normales calculadas en predictPositions() y si se calcula fuerza de st se sobreescriben
-                         // en el primer step las normales estaran a 0 pero igualmente las velocidades tambien estaran a 0 entonces no pasaria nada
-                         // y a la siguiente vuelta ya se habran calculado las normales en predictPositions()
-
-    // aqui corregir velocidad?
-    /*if (sim -> getBoundaryHandlingMethod() == Simulation::PCISPH_BOUNDARY_METHOD)
-        for (unsigned int nBoundary = 0; nBoundary < sim -> numberBoundaryModels(); ++nBoundary)
-        {
-            PCISPHBoundaryModel* bm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nBoundary));
-
-            bm -> correctVelocities();
-        }*/
-
-    // correctDensityError()
-    correctDensityError();
-
-    // updatePositions
-    updatePositions();
-
-    // aqui corregir posicion?
-   /* if (sim -> getBoundaryHandlingMethod() == Simulation::PCISPH_BOUNDARY_METHOD)
-        for (unsigned int nBoundary = 0; nBoundary < sim -> numberBoundaryModels(); ++nBoundary)
-        {
-            PCISPHBoundaryModel* bm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nBoundary));
-
-            bm -> correctPositions();
-        }
-
-    // boundary handling
-    sim -> startCounting();
-    if (sim -> getBoundaryHandlingMethod() == Simulation::CUBE_BOUNDARY_METHOD)
+        sim -> startCounting("Boundary handling");
         for (unsigned int nBoundary = 0; nBoundary < sim -> numberBoundaryModels(); ++nBoundary)
         {
             CubeBoundaryModel* bm = static_cast<CubeBoundaryModel*>(sim -> getBoundaryModel(nBoundary));
 
             bm -> correctPositionAndVelocity();
-        }*/
+        }
+        sim -> stopCounting("Boundary handling");
+    }
 
     sim -> setTime(sim -> getTime() + sim -> getTimeStep());
 }
@@ -260,8 +174,7 @@ void DFSPHSolver::computeAlpha()
             Real sumGradMag = length(sumGrad);
             Real denominator = sumGradMag * sumGradMag + sumSqGrad;
 
-            // umbral de  10^-6 especificado en paper dfsph
-            if (fabs(denominator) > 1e-5)
+            if (fabs(denominator) > eps)
                 alpha = fm -> getDensity(i) / denominator; // importante tiene signo negativo pero a empezado a funcionar al quitarselo
             else 
                 alpha = 0.0;
@@ -383,8 +296,7 @@ void DFSPHSolver::predictDensities()
 
     avgDensError /= totalNumParticles;
 
-    std::cout << "Avg density error    " << avgDensError * 100.0 << "% | " << maxError * 100.0 << "%" << std::endl;
-    std::cout.precision(4);
+    LOG("Avg error         -> ", avgDensError * 100.0, "% | ", maxError * 100.0, "%");
 }
 
 void DFSPHSolver::correctDensityError()
@@ -440,7 +352,7 @@ void DFSPHSolver::correctDensityError()
 
                     Real kSum = (ki / dens_i + kj / dens_j);
 
-                    if (fabs(kSum) > 1e-5) // ver si sirve de algo (probablemente solo para ahorrar tiempo)
+                    if (fabs(kSum) > eps) // ver si sirve de algo (probablemente solo para ahorrar tiempo)
                         sum += fm -> getMass(j) * kSum * CubicSpline::gradW(ri - rj);
                 );
 
@@ -454,7 +366,7 @@ void DFSPHSolver::correctDensityError()
 
                         Real kSum = ki / dens_i;
 
-                        if (fabs(kSum > 1e-5))
+                        if (fabs(kSum > eps))
                             sum += bm -> getMass() * kSum * CubicSpline::gradW(ri - rb);
                     );
                 } 
@@ -468,7 +380,7 @@ void DFSPHSolver::correctDensityError()
 
                         Real kSum = ki / dens_i; // densidad al cuadrado? (como en el paper)
 
-                        if (fabs(kSum) > 1e-5)
+                        if (fabs(kSum) > eps)
                             sum += density0 * bm -> getVolume(b) * kSum * CubicSpline::gradW(ri - rb);
                     );
                 }
@@ -483,8 +395,8 @@ void DFSPHSolver::correctDensityError()
     }
     sumIterations += iterations;
 
-    std::cout << "Density corrector iterations        -> " << iterations << std::endl;
-    std::cout << "Density corrector avg iterations    -> " << sumIterations / (Real) steps << std::endl;
+    LOG("Solver its        -> ", iterations);
+    LOG("Solver avg its    -> ", sumIterations / (Real) steps);
 }
 
 void DFSPHSolver::computeDivergenceError()
@@ -570,7 +482,7 @@ void DFSPHSolver::computeDivergenceError()
 
     avgDivError /= totalNumParticles;
 
-    std::cout << "Avg divergence error " << avgDivError * sim -> getTimeStep() * 100 << "% | " << maxErrorV * 100.0 << "%" << std::endl;
+    LOG("Avg errorV        -> ", avgDivError * sim -> getTimeStep() * 100.0, "% | ", maxErrorV * 100.0, "%");
 }
 
 void DFSPHSolver::correctDivergenceError()
@@ -629,7 +541,7 @@ void DFSPHSolver::correctDivergenceError()
                     Real kjv = divError_j * alpha_j / ts;
                     Real kSumV = (kiv / dens_i + kjv / dens_j);
 
-                    if (fabs(kSumV) > 1e-5)
+                    if (fabs(kSumV) > eps)
                         sum += fm -> getMass(j) * kSumV * CubicSpline::gradW(ri - rj);
                 );
 
@@ -643,7 +555,7 @@ void DFSPHSolver::correctDivergenceError()
 
                         Real kSum = kiv / dens_i;
 
-                        if (fabs(kSum) > 1e-5)
+                        if (fabs(kSum) > eps)
                             sum += bm -> getMass() * kSum * CubicSpline::gradW(ri - rb);
                     );
                 } 
@@ -657,7 +569,7 @@ void DFSPHSolver::correctDivergenceError()
 
                         Real kSum = kiv / dens_i; // densidad al cuadrado? (como en el paper)
 
-                        if (fabs(kSum) > 1e-5)
+                        if (fabs(kSum) > eps)
                             sum += density0 * bm -> getVolume(b) * kSum * CubicSpline::gradW(ri - rb);
                     );
                 } 
@@ -672,8 +584,8 @@ void DFSPHSolver::correctDivergenceError()
     }
     sumIterationsV += iterationsV;
 
-    std::cout << "Divergence corrector iterations     -> " << iterationsV << std::endl;
-    std::cout << "Divergence corrector avg iterations -> " << sumIterationsV / (Real) steps << std::endl;
+    LOG("SolverV its       -> ", iterationsV);
+    LOG("SolverV avg its   -> ", sumIterationsV / (Real) steps);
 }
 
 void DFSPHSolver::densityWarmStart()
@@ -743,7 +655,7 @@ void DFSPHSolver::densityWarmStart()
 
                         Real kSum = (ki + kj);
 
-                        if (fabs(kSum) > 1e-5) // ver si sirve de algo (probablemente solo para ahorrar tiempo)
+                        if (fabs(kSum) > eps) // ver si sirve de algo (probablemente solo para ahorrar tiempo)
                             sum += fm -> getMass(j) * kSum * CubicSpline::gradW(ri - rj);;
                     );
 
@@ -757,7 +669,7 @@ void DFSPHSolver::densityWarmStart()
 
                             Real kSum = ki;
 
-                            if (fabs(kSum > 1e-5))
+                            if (fabs(kSum > eps))
                                 sum += bm -> getMass() * kSum * CubicSpline::gradW(ri - rb);
                         );
                     } 
@@ -771,7 +683,7 @@ void DFSPHSolver::densityWarmStart()
 
                             Real kSum = 2.0 * ki; 
 
-                            if (fabs(kSum) > 1e-5)
+                            if (fabs(kSum) > eps)
                                 sum += density0 * bm -> getVolume(b) * kSum * CubicSpline::gradW(ri - rb);
                         );
                     }
@@ -850,7 +762,7 @@ void DFSPHSolver::densityWarmStart()
 
                         Real kSum = (ki + kj);
 
-                        if (fabs(kSum) > 1e-5) // ver si sirve de algo (probablemente solo para ahorrar tiempo)
+                        if (fabs(kSum) > eps) // ver si sirve de algo (probablemente solo para ahorrar tiempo)
                             sum += fm -> getMass(j) * kSum * CubicSpline::gradW(ri - rj);;
                     );
 
@@ -864,7 +776,7 @@ void DFSPHSolver::densityWarmStart()
 
                             Real kSum = ki;
 
-                            if (fabs(kSum > 1e-5))
+                            if (fabs(kSum > eps))
                                 sum += bm -> getMass() * kSum * CubicSpline::gradW(ri - rb);
                         );
                     } 
@@ -878,7 +790,7 @@ void DFSPHSolver::densityWarmStart()
 
                             Real kSum = 2.0 * ki; 
 
-                            if (fabs(kSum) > 1e-5)
+                            if (fabs(kSum) > eps)
                                 sum += density0 * bm -> getVolume(b) * kSum * CubicSpline::gradW(ri - rb);
                         );
                     }
@@ -961,7 +873,7 @@ void DFSPHSolver::divergenceWarmStart()
                         Real kjv = kv[fmIndex][j];
                         Real kSumV = (kiv + kjv);
 
-                        if (fabs(kSumV) > 1e-5)
+                        if (fabs(kSumV) > eps)
                             sum += fm -> getMass(j) * kSumV * CubicSpline::gradW(ri - rj);
                     );
 
@@ -975,7 +887,7 @@ void DFSPHSolver::divergenceWarmStart()
 
                             Real kSum = kiv;
 
-                            if (fabs(kSum) > 1e-5)
+                            if (fabs(kSum) > eps)
                                 sum += bm -> getMass() * kSum * CubicSpline::gradW(ri - rb);
                         );
                     } 
@@ -989,7 +901,7 @@ void DFSPHSolver::divergenceWarmStart()
 
                             Real kSum = kiv; 
 
-                            if (fabs(kSum) > 1e-5)
+                            if (fabs(kSum) > eps)
                                 sum += density0 * bm -> getVolume(b) * kSum * CubicSpline::gradW(ri - rb);
                         );
                     }
@@ -1044,7 +956,6 @@ void DFSPHSolver::updateTimeStep()
     Simulation *sim = Simulation::getCurrent();
     unsigned int nFluidModels = sim -> numberFluidModels();
     Real ts = sim -> getTimeStep();
-    //Real supportRadius = sim -> getSupportRadius();
 
     maxVel = 0.1;
     //maxAcc = 0.00;
@@ -1068,14 +979,8 @@ void DFSPHSolver::updateTimeStep()
     }
 
     Real newTs;
+    Real cflTs = 1.0 * 0.4 * 2.0 * sim -> getParticleRadius() / maxVel; 
 
-
-    Real cflTs = 1.0 * 0.4 * 2.0 * sim -> getParticleRadius() / maxVel; // Velocity condition
-    //Real cflTs2 = 0.25 * 0.4 * sqrt (2.0 * sim -> getParticleRadius() / maxAcc); // Acceleration condition
-
-    //newTs = glm::min(cflTs, cflTs2);
-    std::cout << "Vel " << cflTs << " "/* << "Acc " << cflTs2 */<< std::endl;
-    //newTs = cflTs;
     if (cflTs < ts)
         newTs = cflTs;
     else if (iterations > 3)
@@ -1088,21 +993,6 @@ void DFSPHSolver::updateTimeStep()
 
     sim -> setTimeStep(newTs);
     
-    std::cout << "TimeStep " << sim -> getTimeStep() << std::endl;
-
-
-    /* Funciona aceptablemente para escenas mas generales
-
-    Real cflTs = 0.5 * 0.4 * 2.0 * sim -> getParticleRadius() / maxVel; // Velocity condition
-    // Grandes impactos 0.25?
-
-    if (cflTs < ts)
-        newTs = cflTs;
-    else if (iterations > 3)
-        newTs = ts * 0.99;
-    else 
-        newTs = ts * 1.001;
-        
-    */
+    LOG("Current time step -> ", newTs, " s (", cflTs, " s)");
 }
 

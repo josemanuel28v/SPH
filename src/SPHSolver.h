@@ -46,6 +46,7 @@ class SPHSolver
 
         Real getMaxError() { return maxError; }
         Real getMaxVel() { return maxVel; }
+        unsigned int getSteps() { return steps; }
 };
 
 #endif

@@ -35,9 +35,10 @@ void PCISPHBoundaryModel::sampleCube()
     Real ly = glm::abs(min.y - max.y); 
     Real lz = glm::abs(min.z - max.z); 
     
-    unsigned nx = glm::ceil(lx / (0.5 * supportRadius));
-    unsigned ny = glm::ceil(ly / (0.5 * supportRadius));
-    unsigned nz = glm::ceil(lz / (0.5 * supportRadius));
+    // El espaciado es 0.5 pero asi da la impresion de que las particulas botan
+    unsigned nx = glm::ceil(lx / (0.45 * supportRadius));
+    unsigned ny = glm::ceil(ly / (0.45 * supportRadius));
+    unsigned nz = glm::ceil(lz / (0.45 * supportRadius));
     
     // Distancia entre particulas de cada eje
     Real dx = lx / nx; 
@@ -167,8 +168,6 @@ void PCISPHBoundaryModel::sampleCube()
         density[i] = 0;
         pressure[i] = 0;
     }
-
-    std::cout << "Cube particles " << boundary_position.size() << std::endl;
 }
 
 void PCISPHBoundaryModel::sampleSphere()

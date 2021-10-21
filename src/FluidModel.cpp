@@ -17,6 +17,8 @@ FluidModel::FluidModel()
 FluidModel::~FluidModel()
 {
     // borrar punteros
+    for (unsigned int i = 0 ; i < npForces.size(); ++i)
+        delete npForces[i];
 
     cleanFluid();
 }

@@ -113,8 +113,6 @@ void ShaderLoader::setProgramID(GLuint programID)
     this -> programID = programID;
 }
 
-
-
 void ShaderLoader::addShader(std::string filename)
 {
     filenames.push_back(filename);
@@ -135,4 +133,34 @@ void ShaderLoader::loadShaders()
     std::cout << "Linkando objeto programa ..." << std::endl;
     printLinkInfoLog();
     validateProgram();                                  
+}
+
+void ShaderLoader::addAttribute(std::string name)
+{
+    attributes[name] = glGetAttribLocation(programID, name.c_str());
+}
+
+void ShaderLoader::addUniform(std::string name, GLint id)
+{
+    uniforms[name] = id;
+}
+
+GLint ShaderLoader::getUniformLocation(std::string name)
+{
+    return uniforms[name];
+}
+
+GLint ShaderLoader::getAttributeLocation(std::string name)
+{
+    return attributes[name];
+}
+
+void ShaderLoader::begin()
+{
+    glUseProgram(programID);
+}
+
+void ShaderLoader::end()
+{
+    glUseProgram(0);
 }

@@ -2,8 +2,11 @@
 #include "Simulation.h"
 #include "CubeBoundaryModel.h"
 #include "PCISPHBoundaryModel.h"
+#include "AkinciBoundaryModel.h"
 #include "Poly6.h"
 #include "Spiky.h"
+#include "CubicSpline.h"
+#include "Logger.h"
 #include <iostream>
 
 void PCISPHSolver::init()
@@ -18,66 +21,50 @@ void PCISPHSolver::init()
 void PCISPHSolver::step()
 {
     Simulation *sim = Simulation::getCurrent();
-    unsigned int nFluidModels = sim -> numberFluidModels();
+    ++steps;
 
-    // Insertar las particulas de todos los fluidModels en el grid
-    sim -> startCounting();
+    sim -> startCounting("Fill grid        ");
     insertFluidParticles();
-    sim -> stopCounting();
-    std::cout << "Fill grid                 -> " << sim -> getInterval() << std::endl;
+    sim -> stopCounting("Fill grid        ");
 
-    // Hacer la busqueda de vecinos de todos los fluidModels y boundaryModels
-    sim -> startCounting();
+    sim -> startCounting("Neigh search     ");
     neighborhoodSearch();
-    sim -> stopCounting();
-    std::cout << "Search neighboorhoods     -> " << sim -> getInterval() << std::endl;
+    sim -> stopCounting("Neigh search     ");
 
-    // Calcular densidad de cada fluidModel y de los boundary models si es necesario
-    sim -> startCounting();
+    sim -> startCounting("Densities        ");
     computeDensities();
-    sim -> stopCounting();
-    std::cout << "Compute density           -> " << sim -> getInterval() << std::endl;
+    sim -> stopCounting("Densities        ");
 
-    // Calcular fuerzas de no presion para todos los fluid models
-    sim -> startCounting();
-    for (unsigned int i = 0; i < nFluidModels; ++i)
-    {
-        FluidModel *fm = sim -> getFluidModel(i);
-        unsigned int nNonPressureForces = fm -> numberNonPressureForces();
-
-        for (unsigned int j = 0; j < nNonPressureForces; ++j)
-        {
-            NonPressureForce *force = fm -> getNonPressureForce(j);
-            
-            force -> step();
-        }
-    }
-    sim -> stopCounting();
-    std::cout << "Compute nonpressure force -> " << sim -> getInterval() << std::endl;
+    sim -> startCounting("npForces         ");
+    sim -> computeNonPressureForces();
+    sim -> stopCounting("npForces         ");
 
     // Inicializar presion y fuerza de presion
     initPressure();
 
     // Bucle predictivo correctivo para calcular la presion 
+    sim -> startCounting("Pressure solver  ");
     pressureSolver();
+    sim -> stopCounting("Pressure solver  ");
 
-    // Integracion
-    sim -> startCounting();
+    sim -> startCounting("Integration      ");
     integrate();
-    sim -> stopCounting();
-    std::cout << "Compute integration       -> " << sim -> getInterval() << std::endl;
+    sim -> stopCounting("Integration      ");
 
-    // Boundary handling
-    sim -> startCounting();
     if (sim -> getBoundaryHandlingMethod() == Simulation::CUBE_BOUNDARY_METHOD)
+    {
+        sim -> startCounting("Boundary handling");
         for (unsigned int nBoundary = 0; nBoundary < sim -> numberBoundaryModels(); ++nBoundary)
         {
             CubeBoundaryModel* bm = static_cast<CubeBoundaryModel*>(sim -> getBoundaryModel(nBoundary));
 
             bm -> correctPositionAndVelocity();
         }
+        sim -> stopCounting("Boundary handling");
+    }
     else if (sim -> getBoundaryHandlingMethod() == Simulation::PCISPH_BOUNDARY_METHOD)
     {
+        sim -> startCounting("Boundary handling");
         for (unsigned int nBoundary = 0; nBoundary < sim -> numberBoundaryModels(); ++nBoundary)
         {
             PCISPHBoundaryModel* pcibm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nBoundary));
@@ -85,9 +72,8 @@ void PCISPHSolver::step()
             pcibm -> correctPositions();
             pcibm -> correctVelocities();
         }
+        sim -> stopCounting("Boundary handling");
     }
-    sim -> stopCounting();
-    std::cout << "Boundary handling         -> " << sim -> getInterval() << std::endl;
 
     sim -> setTime(sim -> getTime() + sim -> getTimeStep());
 }
@@ -178,6 +164,8 @@ void PCISPHSolver::predictFluidDensities(const unsigned int fmIndex)
     Simulation *sim = Simulation::getCurrent();
     FluidModel *fm = sim -> getFluidModel(fmIndex);
     unsigned int numParticles = fm -> getNumActiveParticles();
+    int boundaryMethod = sim -> getBoundaryHandlingMethod();
+    Real density0 = fm -> getRefDensity();
 
     HashTable *grid = sim -> getGrid();
 
@@ -196,17 +184,28 @@ void PCISPHSolver::predictFluidDensities(const unsigned int fmIndex)
         forall_fluid_neighbors_in_same_phase
         (
             Vector3r & rj = getPredR(fmIndex, j);
-            density += fm -> getMass(j) * Poly6::W(ri - rj)/*sim -> W(ri - rj)*/;
+            density += fm -> getMass(j) * CubicSpline::W(ri - rj);
         );
 
         // casos de los distintos boudarymodels  
-        if (sim -> getBoundaryHandlingMethod() == Simulation::PCISPH_BOUNDARY_METHOD)
+        if (boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD)
+        {
             forall_boundary_neighbors
             (
                 PCISPHBoundaryModel *nbm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
                 Vector3r & rb = nbm -> getPosition(b);
-                density += nbm -> getMass() * Poly6::W(ri - rb);
-            );    
+                density += nbm -> getMass() * CubicSpline::W(ri - rb);
+            ); 
+        }
+        else if (boundaryMethod == Simulation::AKINCI_BOUNDARY_METHOD)
+        {
+            forall_boundary_neighbors
+            (
+                AkinciBoundaryModel *nbm = static_cast<AkinciBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
+                Vector3r & rb = nbm -> getPosition(b);
+                density += density0 * nbm -> getVolume(b) * CubicSpline::W(ri - rb);
+            ); 
+        }
     }
 }
 
@@ -298,11 +297,13 @@ void PCISPHSolver::computePressureAcc()
     Simulation *sim = Simulation::getCurrent();
     HashTable *grid = sim -> getGrid();
     unsigned int nFluidModels = sim -> numberFluidModels();
+    int boundaryMethod = sim -> getBoundaryHandlingMethod();
 
     for (unsigned int fmIndex = 0; fmIndex < nFluidModels; ++fmIndex)
     { 
         FluidModel *fm = sim -> getFluidModel(fmIndex);
         unsigned int numParticles = fm -> getNumActiveParticles();
+        Real density0 = fm -> getRefDensity();
 
         #pragma omp parallel for
         for (unsigned int i = 0; i < numParticles; ++i)
@@ -316,16 +317,18 @@ void PCISPHSolver::computePressureAcc()
 
             pacc = Vector3r(0.0, 0.0, 0.0);
 
+            Real densPress_i = press_i / (dens_i * dens_i);
             forall_fluid_neighbors_in_same_phase
             (
                 Vector3r & rj = fm -> getPosition(j);
                 Real & press_j = fm -> getPressure(j);
                 Real & dens_j = fm -> getDensity(j);
 
-                pacc -= fm -> getMass(j) * (press_i / (dens_i * dens_i) + press_j / (dens_j * dens_j)) * Spiky::gradW(ri - rj);
+                pacc -= fm -> getMass(j) * (densPress_i + press_j / (dens_j * dens_j)) * Spiky::gradW(ri - rj);
             );
 
-            if (sim -> getBoundaryHandlingMethod() == Simulation::PCISPH_BOUNDARY_METHOD)
+            if (boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD)
+            {
                 forall_boundary_neighbors
                 (
                     PCISPHBoundaryModel *nbm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
@@ -334,8 +337,20 @@ void PCISPHSolver::computePressureAcc()
                     Real & press_b = nbm -> getPressure(b);
                     Real & dens_b = nbm -> getDensity(b);
 
-                    pacc -= nbm -> getMass() * (press_i / (dens_i * dens_i) + press_b / (dens_b * dens_b)) * Spiky::gradW(ri - rb);                
+                    pacc -= nbm -> getMass() * (densPress_i + press_b / (dens_b * dens_b)) * Spiky::gradW(ri - rb);                
                 );
+            }
+            else if (boundaryMethod == Simulation::AKINCI_BOUNDARY_METHOD)
+            {
+                forall_boundary_neighbors
+                (
+                    AkinciBoundaryModel *nbm = static_cast<AkinciBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
+
+                    Vector3r & rb = nbm -> getPosition(b);
+
+                    pacc -= density0 * nbm -> getVolume(b) * (densPress_i) * Spiky::gradW(ri - rb);                
+                );
+            }
         }
     }
 }
@@ -349,7 +364,6 @@ void PCISPHSolver::pressureSolver()
     {
         predictVelocityAndPosition();
 
-        // meter boundary aqui
         if (sim -> getBoundaryHandlingMethod() == Simulation::PCISPH_BOUNDARY_METHOD)
         {
             for (unsigned int nBoundary = 0; nBoundary < sim -> numberBoundaryModels(); ++nBoundary)
@@ -366,7 +380,7 @@ void PCISPHSolver::pressureSolver()
 
         ++iterations;
 
-        std::cout << "      Iteration -> " << iterations << " Fluctuation -> " << maxDensityError * 100.0 << "%" << std::endl;
+        LOG("It -> ", iterations, "           -> ", maxDensityError * 100.0, "%");
     }
 }
 
@@ -376,7 +390,7 @@ void PCISPHSolver::computeScalingFactor()
     unsigned int nFluidModels = sim -> numberFluidModels();
     Real ts = sim -> getTimeStep();
 
-    Real dist = sim -> getSupportRadius() / sqrt(3.0); 
+    Real dist = 2.0 * sim -> getParticleRadius(); 
     Vector3r sumGrad(0, 0, 0);      // Sumatorio del gradiente
     Real sumSqGrad = 0;             // Sumatorio del cuadrado del gradiente
 
@@ -402,8 +416,6 @@ void PCISPHSolver::computeScalingFactor()
 
         setScalingFactor(fmIndex, - 1.0 / (beta * (- dotSumGrad - sumSqGrad)));
     }
-
-    std::cout << "Scaling factor " << getScalingFactor(0) << std::endl;
 }
 
 void PCISPHSolver::resizeData()

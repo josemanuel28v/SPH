@@ -4,7 +4,7 @@
 #include "PCISPHBoundaryModel.h"
 #include "AkinciBoundaryModel.h"
 #include "Spiky.h"
-#include <iostream>
+#include "CubicSpline.h"
 
 void WCSPHSolver::init()
 {
@@ -15,76 +15,53 @@ void WCSPHSolver::step()
 {
     Simulation *sim = Simulation::getCurrent();
     unsigned int nFluidModels = sim -> numberFluidModels();
+    ++steps;
 
-    std::cout << "stiffness " << stiffness << std::endl;
-
-    // Insertar las particulas de todos los fluidModels en el grid
-    sim -> startCounting();
+    sim -> startCounting("Fill grid        ");
     insertFluidParticles();
-    sim -> stopCounting();
-    std::cout << "Fill grid                 -> " << sim -> getInterval() << std::endl;
+    sim -> stopCounting("Fill grid        ");
 
-    // Hacer la busqueda de vecinos de todos los fluidModels y boundaryModels
-    sim -> startCounting();
+    sim -> startCounting("Neigh search     ");
     neighborhoodSearch();
-    sim -> stopCounting();
-    std::cout << "Search neighboorhoods     -> " << sim -> getInterval() << std::endl;
+    sim -> stopCounting("Neigh search     ");
 
-    // Calcular densidad 
-    sim -> startCounting();
+    sim -> startCounting("Densities        ");
     computeDensities();
-    sim -> stopCounting();
-    std::cout << "Compute density           -> " << sim -> getInterval() << std::endl;
+    sim -> stopCounting("Densities        ");
 
-    // Calcular presion
-    sim -> startCounting();
+    sim -> startCounting("Pressures        ");
     computePressures();
-    sim -> stopCounting();
-    std::cout << "Compute pressure          -> " << sim -> getInterval() << std::endl;
+    sim -> stopCounting("Pressures        ");
 
-    // Calcular fuerza de presion de cada fluidModel
-    sim -> startCounting();
+    sim -> startCounting("Pressure force   ");
     for (unsigned int i = 0; i < nFluidModels; ++i)
-    {
         computePressureForce(i);
-    }
-    sim -> stopCounting();
-    std::cout << "Compute pressure force    -> " << sim -> getInterval() << std::endl;
+    sim -> stopCounting("Pressure force   ");
 
-    // Calcular fuerzas de no presion para todos los fluid models
-    for (unsigned int i = 0; i < nFluidModels; ++i)
-    {
-        FluidModel *fm = sim -> getFluidModel(i);
-        unsigned int nNonPressureForces = fm -> numberNonPressureForces();
-
-        for (unsigned int j = 0; j < nNonPressureForces; ++j)
-        {
-            NonPressureForce *force = fm -> getNonPressureForce(j);
-            sim -> startCounting();
-            force -> step();
-            sim -> stopCounting();
-        }
-    }
+    sim -> startCounting("NPForces         ");
+    sim -> computeNonPressureForces();
+    sim -> stopCounting("NPForces         ");
     
-    std::cout << "Compute nonpressure force -> " << sim -> getInterval() << std::endl;
+    //updateTimeStep();
 
-    updateTimeStep();
-
-    sim -> startCounting();
+    sim -> startCounting("Integratio       ");
     integrate();
-    sim -> stopCounting();
-    std::cout << "Compute integration       -> " << sim -> getInterval() << std::endl;
+    sim -> stopCounting("Integration      ");
 
-    sim -> startCounting();
     if (sim -> getBoundaryHandlingMethod() == Simulation::CUBE_BOUNDARY_METHOD)
+    {
+        sim -> startCounting("Boundary Handling");
         for (unsigned int nBoundary = 0; nBoundary < sim -> numberBoundaryModels(); ++nBoundary)
         {
             CubeBoundaryModel* bm = static_cast<CubeBoundaryModel*>(sim -> getBoundaryModel(nBoundary));
 
             bm -> correctPositionAndVelocity();
         }
+        sim -> startCounting("Boundary Handling");
+    }
     else if (sim -> getBoundaryHandlingMethod() == Simulation::PCISPH_BOUNDARY_METHOD)
     {
+        sim -> startCounting("Boundary Handling");
         for (unsigned int nBoundary = 0; nBoundary < sim -> numberBoundaryModels(); ++nBoundary)
         {
             PCISPHBoundaryModel* pcibm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nBoundary));
@@ -92,13 +69,10 @@ void WCSPHSolver::step()
             pcibm -> correctPositions();
             pcibm -> correctVelocities();
         }
+        sim -> stopCounting("Boundary Handling");
     }
-    sim -> stopCounting();
-    std::cout << "Boundary handling         -> " << sim -> getInterval() << std::endl;
 
-    std::cout << "Pre emit" << std::endl;
     sim -> emitParticles();
-    std::cout << "Post emit" << std::endl;
 
     sim -> setTime(sim -> getTime() + sim -> getTimeStep());
 }
@@ -174,13 +148,15 @@ void WCSPHSolver::computePressureForce(const unsigned int fmIndex)
 
         Vector3i cellId = floor(ri / sim -> getSupportRadius());
 
+        Real densPress_i = press_i / (dens_i * dens_i);
+
         forall_fluid_neighbors_in_same_phase
         (
             Vector3r & rj = fm -> getPosition(j);
             Real & press_j = fm -> getPressure(j);
             Real & dens_j = fm -> getDensity(j);
 
-            ai -= fm -> getMass(j) * (press_i / (dens_i * dens_i) + press_j / (dens_j * dens_j)) * Spiky::gradW(ri - rj);
+            ai -= fm -> getMass(j) * (densPress_i + press_j / (dens_j * dens_j)) * CubicSpline::gradW(ri - rj);
         );
 
         if (boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD)
@@ -193,18 +169,20 @@ void WCSPHSolver::computePressureForce(const unsigned int fmIndex)
                 Real & press_b = nbm -> getPressure(b);
                 Real & dens_b = nbm -> getDensity(b);
 
-                ai -= nbm -> getMass() * (press_i / (dens_i * dens_i) + press_b / (dens_b * dens_b)) * Spiky::gradW(ri - rb);     
+                ai -= nbm -> getMass() * (densPress_i + press_b / (dens_b * dens_b)) * CubicSpline::gradW(ri - rb);     
             );
         }
         else if (boundaryMethod == Simulation::AKINCI_BOUNDARY_METHOD)
         {
+            Real densPress_b = press_i / (density0 * density0);
             forall_boundary_neighbors
             (
                 AkinciBoundaryModel *nbm = static_cast<AkinciBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
 
                 Vector3r & rb = nbm -> getPosition(b);
 
-                ai -= density0 * nbm -> getVolume(b) * (press_i / (dens_i * dens_i) + press_i / (density0 * density0)) * Spiky::gradW(ri - rb); 
+                // Segun el paper es 1.0 * densPress_i, pero como este metodo permite compresion, ese valor no es suficiente evitar la penetracioin
+                ai -= density0 * nbm -> getVolume(b) * (densPress_i * 1.0) * CubicSpline::gradW(ri - rb); 
             );
         }
     }
@@ -237,8 +215,6 @@ void WCSPHSolver::updateTimeStep()
     Real cflFactor = 0.5;
     Real newTs = cflFactor * 0.4 * 2.0 * sim -> getParticleRadius() / maxVel;
 
-    std::cout << "Propuesta ts " << newTs << std::endl;
-
     if (newTs > ts)
         newTs = ts * 1.005;
     /*else if (newTs < ts)
@@ -249,5 +225,4 @@ void WCSPHSolver::updateTimeStep()
 
     sim -> setTimeStep(newTs);
     
-    std::cout << "TimeStep " << sim -> getTimeStep() << std::endl;
 }

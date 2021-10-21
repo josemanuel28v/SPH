@@ -16,8 +16,6 @@ SPHSolver::SPHSolver()
     maxIterations = 100;
     sumIterations = 0;
     maxError = 0.01; // 1%
-
-    std::cout << "solver instanciado" << std::endl;
 }
 
 void SPHSolver::init()
@@ -98,6 +96,12 @@ void SPHSolver::computeFluidDensities(const unsigned int fmIndex)
             Vector3r & rj = nfm -> getPosition(j);
             density += nfm -> getMass(j) * CubicSpline::W(ri - rj);
         );*/
+
+        /*if (density > fm -> getRefDensity())
+        {
+            std::cout << "Density " << density << std::endl;
+            getchar();
+        }*/
     }
 }
 
