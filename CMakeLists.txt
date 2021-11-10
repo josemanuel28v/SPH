@@ -8,7 +8,7 @@ include_directories(${SPH_SOURCE_DIR}/extern ${SPH_SOURCE_DIR}/src)
 SET(CMAKE_CXX_FLAGS "-O3 -mavx -ffast-math -std=c++17 -march=native -mtune=native -Wall -Wpedantic -fopenmp -lglut -lGL -lGLEW")
 
 # Todos los cpp para los que se generara un .o
-FILE(GLOB SPH_SRC "${SPH_SOURCE_DIR}/Extern/*.cpp"
+FILE(GLOB SPH_SRC "${SPH_SOURCE_DIR}/extern/*.cpp"
                   "${SPH_SOURCE_DIR}/src/*.cpp")
 
 ADD_EXECUTABLE(SPH ${SPH_SRC}) # Crea un ejecutable llamado SPH en Linux o SPH.exe en Windows.
