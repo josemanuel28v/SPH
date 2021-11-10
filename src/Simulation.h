@@ -43,12 +43,99 @@
         code \
     } 
 
-struct FluidBlockInfo
+// Structs para exportar e importar escenas en formato json
+struct SceneInfo
 {
-    Vector3r origin;
-    unsigned int nx; 
-    unsigned int ny; 
-    unsigned int nz;
+    Real startTime;
+    Real endTime;
+    Real timeStep;
+    Real fps;
+    Real minTimeStep;
+    Real maxTimeStep;
+    Vector3r gravity;
+    Real particleRadius;
+    int simulationMethod;
+    int boundaryMethod;
+    Real stiffness;
+    Real gamma;
+    Real eta;
+    Real etaV;
+    Real cflFactor;
+};
+
+struct BlockInfo
+{
+    Vector3r min; // fluid block
+    Vector3r max; // fluid block
+};
+
+struct EmitterInfo
+{
+    unsigned int type; 
+    unsigned int numParticles; 
+    Vector3r r;
+    Real v; 
+    Quat4r rot; // Cuando se aclare la forma de dar la orientacion desde blender
+    Real startTime; 
+    Real width; // Si el tipo es circular el radio sera width
+    Real height;
+    Real spacing;
+};
+
+struct Fluid // Representa un fluidModel en la misma fase que puede inicializarse con fluidBlocks geometrias de volumen y emisores
+{
+    std::vector<BlockInfo> fluidBlocks;
+    std::vector<EmitterInfo> emitters;
+    //std::vector<> geometries; // Conjunto de geometrias que seran sampleadas (volumen)
+
+    Real viscosity;
+    Real boundaryViscosity;
+    Real surfaceTension;
+    Real adhesion;
+    Real density0;
+};
+
+struct FluidInfo
+{
+    std::vector<Fluid> fluids;
+
+    int viscosityMethod;
+    int surfaceTensionMethod;
+    int adhesionMethod;
+};
+
+struct Sphere
+{
+    Vector3r pos;
+    Real radius;
+};
+
+struct Geometry
+{
+    std::string path;
+    Real spacing;
+};
+
+struct Boundary // Representa un boundary model
+{
+    std::vector<std::pair<BlockInfo, bool>> box;
+    std::vector<std::pair<Sphere, bool>> sphere;
+    std::vector<Geometry> geometry;
+
+    Real normalFct;
+    Real tangFct;
+};
+
+struct BoundaryInfo
+{
+    std::vector<Boundary> boundaries;
+};
+
+struct SimulationInfo
+{
+    SceneInfo sceneData;
+    FluidInfo fluidData;
+    BoundaryInfo boundaryData;
 };
 
 /**
@@ -60,6 +147,7 @@ class Simulation
     private:
 
         static Simulation *current;
+        std::string name;
 
     protected:
 
@@ -83,6 +171,8 @@ class Simulation
         int current_kernel_method;
         int current_gradient_method;
         int current_laplacian_method;
+
+        bool activeSave;
 
     public:
 
@@ -133,6 +223,7 @@ class Simulation
 
         void initKernels();
         void initGrid();
+        void initMasses();
 
         // Setters
         void setParticleRadius(Real);
@@ -160,13 +251,17 @@ class Simulation
         Real getSupportRadius() { return supportRadius; }
         Vector3r getGravity() { return gravity; }
         Real getTime() { return tm.getTime(); }
+        unsigned int getFrame() { return tm.getFrame(); }
         Real getStartTime() { return tm.getStartTime(); }
         Real getEndTime() { return tm.getEndTime(); }
         Real getTimeStep() { return tm.getTimeStep(); }
+        Real getFPS() { return tm.getFPS(); }
         void startCounting(std::string name) { tm.startCounting(name); }
         void stopCounting(std::string name) { tm.stopCounting(name); }
+        Real getInterval(std::string name) { return tm.getInterval(name); }
         Real getMinTimeStep() { return tm.getMinTimeStep(); }
         Real getMaxTimeStep() { return tm.getMaxTimeStep(); }
+        std::string getName() { return name; }
 
         int getSimulationMethod() { return current_method; }
         int getKernelMethod();
@@ -183,6 +278,7 @@ class Simulation
         const unsigned int numberBoundaryModels() { return boundaryModels.size(); }
 
         FluidModel* addFluidModel(std::vector<Vector3r>&, std::vector<Vector3r>&);
+        FluidModel* addFluidModel();
         FluidModel* getFluidModel(const unsigned int i) { return fluidModels[i]; }
 
         void addBoundaryModel(BoundaryModel*);
@@ -199,7 +295,11 @@ class Simulation
 
         void emitParticles();
 
-        // se necesita para el programa de opengl antiguo
+        bool importScene(std::string);
+
+        void activateSave(bool active) { activeSave = active; }
+
+        // Para pintar particulas con OpenGL
         const unsigned int numberActiveParticles(const unsigned int fmIndex) { return fluidModels[fmIndex] -> getNumActiveParticles(); }
         std::vector<Vector3r> & getPositions(const unsigned int fmIndex) { return fluidModels[fmIndex] -> getPositions(); }
         std::vector<Real> & getPressures(const unsigned int fmIndex) { return fluidModels[fmIndex] -> getPressures(); }
@@ -208,10 +308,9 @@ class Simulation
         std::vector<Real> & getDivergenceError(const unsigned int fmIndex);
 
         // Construir bloque de fluido
-        FluidModel* buildFluidBlock(Real, std::vector<FluidBlockInfo>);
+        FluidModel* buildFluidBlock(const std::vector<BlockInfo> &);
 
-        // Añadir boundary model a partir de un modelo 3d obj
-        void addBoundaryModelFromOBJ(std::string, Real, Vector3r, Vector3r, Vector3r);
+        void setEmittersPause(bool pause) { for (auto & fm: fluidModels) { fm -> setEmittersPause(pause); } }
 };
 
 #endif

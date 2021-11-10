@@ -20,12 +20,12 @@ class DFSPHSolver: public SPHSolver
         Real avgDivError;
 
         Real maxErrorV; // Maximo error de divergencia permitido
+        
+        Real cflFactor;
 
         unsigned int sumIterationsV;
         unsigned int minIterationsV;
         unsigned int iterationsV;
-
-        Real maxAcc;
         
         Real eps;
 
@@ -46,7 +46,9 @@ class DFSPHSolver: public SPHSolver
         void divergenceWarmStart();
         void densityWarmStart();
 
+        void setCFLFactor(Real factor) { cflFactor = factor; }
         void setMaxErrorV(Real etaV) { maxErrorV = etaV; }
+        Real getMaxErrorV() { return maxErrorV; }
 
         Real & getAlpha(const unsigned int fmIndex, const unsigned int i) { return alpha[fmIndex][i]; }
         Real & getDivError(const unsigned int fmIndex, const unsigned int i) { return divError[fmIndex][i]; }
@@ -56,8 +58,8 @@ class DFSPHSolver: public SPHSolver
 
         void resizeData();
 
-        // para pintar en opengl
-        std::vector<Real> & getDivergenceError(const unsigned fmIndex) { return divError[fmIndex]; }
+        // Para pintar en opengl
+        std::vector<Real> & getDivergenceError(const unsigned fmIndex) { /*return divError[fmIndex];*/ return k[fmIndex]; }
 };
 
 #endif  

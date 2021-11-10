@@ -30,9 +30,9 @@ Real Cohesion::supportRadius9;
 Real Cohesion::valueCoef1;
 Real Cohesion::valueCoef2;
 
-Real CubicSpline::m_radius;
-Real CubicSpline::m_k;
-Real CubicSpline::m_l;
+Real CubicSpline::supportRadius;
+Real CubicSpline::k;
+Real CubicSpline::l;
 
 Real Adhesion::supportRadius;
 Real Adhesion::valueCoef;

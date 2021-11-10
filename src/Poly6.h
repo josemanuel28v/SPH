@@ -13,7 +13,6 @@ class Poly6
         static Real supportRadius9;
         static Real valueCoef;
         static Real gradCoef;
-        //Real laplCoef;
 
     public:
 
@@ -26,7 +25,6 @@ class Poly6
             supportRadius9 = sr * sr * sr * sr * sr * sr * sr * sr * sr;
             valueCoef = 315.0 / (64.0 * M_PI * supportRadius9);
             gradCoef = 945.0 / (32.0 * M_PI * supportRadius9);
-            //laplCoef = 945.0 / (32.0 * M_PI * supportRadius9);
         }
 
         static Real W(const Vector3r & r)

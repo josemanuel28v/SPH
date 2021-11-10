@@ -174,7 +174,6 @@ void WCSPHSolver::computePressureForce(const unsigned int fmIndex)
         }
         else if (boundaryMethod == Simulation::AKINCI_BOUNDARY_METHOD)
         {
-            Real densPress_b = press_i / (density0 * density0);
             forall_boundary_neighbors
             (
                 AkinciBoundaryModel *nbm = static_cast<AkinciBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));

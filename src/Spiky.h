@@ -14,7 +14,6 @@ class Spiky
         static Real supportRadius6;
         static Real valueCoef;
         static Real gradCoef;
-        //Real laplCoef;
 
     public:
 
@@ -25,7 +24,6 @@ class Spiky
             supportRadius6 = sr * sr * sr * sr * sr * sr;
             valueCoef = 15.0 / (M_PI * supportRadius6);
             gradCoef =  45.0 / (M_PI * supportRadius6);
-            //laplCoef = 90.0 / (M_PI * supportRadius6);
         }
 
         static Real W(const Vector3r & r)

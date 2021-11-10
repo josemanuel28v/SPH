@@ -9,11 +9,13 @@
 
 void DFSPHSolver::init()
 {
-    minIterations = 2; // Iteraciones minimas del bucle de correccion de densidad
-    minIterationsV = 1; // Iteraciones minimas del bucle de correccion de divergencia
+    // Iteraciones minimas segun el paper
+    minIterations = 2; 
+    minIterationsV = 1; 
 
     maxIterations = 100;
     sumIterationsV = 0;
+    cflFactor = 1.0;
 
     eps = 1e-5;
 
@@ -45,9 +47,7 @@ void DFSPHSolver::step()
         {
             PCISPHBoundaryModel* bm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nBoundary));
 
-            bm -> correctVelocities(); // cuidado: necesita las normales calculadas en predictPositions() y si se calcula fuerza de st se sobreescriben
-                                       // en el primer step las normales estaran a 0 pero igualmente las velocidades tambien estaran a 0 entonces no pasaria nada
-                                       // y a la siguiente vuelta ya se habran calculado las normales en predictPositions()
+            bm -> correctVelocities();                       
         }
 
     sim -> startCounting("Density solver   ");
@@ -175,7 +175,7 @@ void DFSPHSolver::computeAlpha()
             Real denominator = sumGradMag * sumGradMag + sumSqGrad;
 
             if (fabs(denominator) > eps)
-                alpha = fm -> getDensity(i) / denominator; // importante tiene signo negativo pero a empezado a funcionar al quitarselo
+                alpha = fm -> getDensity(i) / denominator; // Importante tiene signo negativo pero a empezado a funcionar al quitarselo
             else 
                 alpha = 0.0;
         }
@@ -288,13 +288,16 @@ void DFSPHSolver::predictDensities()
             }
 
             pred_density = fm -> getDensity(i) + densityChange * ts;
-            pred_density = glm::max(pred_density, density0); // importante que la densidad predicha nunca sea menor de 1000 ya que solo se corrige la compresión
+            pred_density = glm::max(pred_density, density0); // Importante que la densidad predicha nunca sea menor de 1000 ya que solo se corrige la compresión
 
             avgDensError += (pred_density - density0) / density0;
         }
     }
 
-    avgDensError /= totalNumParticles;
+    if (totalNumParticles == 0)
+        avgDensError = 0;
+    else
+        avgDensError /= totalNumParticles;
 
     LOG("Avg error         -> ", avgDensError * 100.0, "% | ", maxError * 100.0, "%");
 }
@@ -334,7 +337,7 @@ void DFSPHSolver::correctDensityError()
 
                 Vector3r sum(0.0, 0.0, 0.0);
 
-                Real ki = (predDens_i - density0) * alpha_i / ts2;
+                Real ki = (predDens_i - density0) * alpha_i / (ts2 * dens_i);
 
                 // Warm start
                 k[fmIndex][i] += (predDens_i - density0) * alpha_i;
@@ -348,48 +351,45 @@ void DFSPHSolver::correctDensityError()
                     Real predDens_j = getPredDensity(fmIndex, j);
                     Real alpha_j = getAlpha(fmIndex, j);
 
-                    Real kj = (predDens_j - density0) * alpha_j / ts2;
+                    Real kj = (predDens_j - density0) * alpha_j / (ts2 * dens_j);
 
-                    Real kSum = (ki / dens_i + kj / dens_j);
+                    Real kSum = (ki + kj);
 
-                    if (fabs(kSum) > eps) // ver si sirve de algo (probablemente solo para ahorrar tiempo)
+                    if (fabs(kSum) > eps) 
                         sum += fm -> getMass(j) * kSum * CubicSpline::gradW(ri - rj);
                 );
 
-                if (boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD)
+                if (fabs(ki) > eps)
                 {
-                    forall_boundary_neighbors
-                    (
-                        PCISPHBoundaryModel *bm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
+                    if (boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD)
+                    {
+                        forall_boundary_neighbors
+                        (
+                            PCISPHBoundaryModel *bm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
 
-                        Vector3r & rb = bm -> getPosition(b);
+                            Vector3r & rb = bm -> getPosition(b);
 
-                        Real kSum = ki / dens_i;
+                            sum += bm -> getMass() * ki * CubicSpline::gradW(ri - rb);
+                        );
+                    } 
+                    else if (boundaryMethod == Simulation::AKINCI_BOUNDARY_METHOD)
+                    {
+                        forall_boundary_neighbors
+                        (
+                            AkinciBoundaryModel *bm = static_cast<AkinciBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
 
-                        if (fabs(kSum > eps))
-                            sum += bm -> getMass() * kSum * CubicSpline::gradW(ri - rb);
-                    );
-                } 
-                else if (boundaryMethod == Simulation::AKINCI_BOUNDARY_METHOD)
-                {
-                    forall_boundary_neighbors
-                    (
-                        AkinciBoundaryModel *bm = static_cast<AkinciBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
+                            Vector3r & rb = bm -> getPosition(b);
 
-                        Vector3r & rb = bm -> getPosition(b);
-
-                        Real kSum = ki / dens_i; // densidad al cuadrado? (como en el paper)
-
-                        if (fabs(kSum) > eps)
-                            sum += density0 * bm -> getVolume(b) * kSum * CubicSpline::gradW(ri - rb);
-                    );
+                            sum += density0 * bm -> getVolume(b) * ki * CubicSpline::gradW(ri - rb);
+                        );
+                    }
                 }
                             
                 vi -= ts * sum;
             } 
-
-            predictDensities();
         }
+
+        predictDensities();
 
         ++iterations;
     }
@@ -451,8 +451,8 @@ void DFSPHSolver::computeDivergenceError()
                     Vector3r grad = CubicSpline::gradW(ri - rb);
                     divError += bm -> getMass() * dot(vi, grad);
 
-                    if (length(grad) > 0.0)
-                        numNeighbors ++;
+                    /*if (length(grad) > 0.0)
+                        numNeighbors ++;*/
                 );
             } 
             else if (boundaryMethod == Simulation::AKINCI_BOUNDARY_METHOD)
@@ -466,8 +466,8 @@ void DFSPHSolver::computeDivergenceError()
                     Vector3r grad = CubicSpline::gradW(ri - rb);
                     divError += density0 * bm -> getVolume(b) * dot(vi, grad);
 
-                    if (length(grad) > 0.0)
-                        numNeighbors ++;
+                    /*if (length(grad) > 0.0)
+                        numNeighbors ++;*/
                 );
             } 
 
@@ -499,11 +499,9 @@ void DFSPHSolver::correctDivergenceError()
     computeDivergenceError();
 
     iterationsV = 0;
-    // en el codigo de dfsph se divide el maxErrorV entre el timeStep
-    // puede ser porque el avgDivError es el drho/dt o sea la variacion de la densidad respecto al tiempo
-    // pero por unidad de tiempo, sin embargo el maxErrorV es el error entre pasos de simulacion es decir ya esta implicitamente
-    // multiplicado por el dt, entonces se tiene que dividir por el dt
-    // en este caso no se divide porque ya se multiplica cada div error que se acumula en avgDivError por el dt
+
+    // En el codigo de dfsph se divide el maxErrorV entre el timeStep
+    // porque el avgDivError es el drho/dt o sea la variacion de la densidad respecto al tiempo
     avgDivError = 0;
     while (((avgDivError > maxErrorV / ts) || (iterationsV < minIterationsV)) && iterationsV < maxIterations)
     {
@@ -524,7 +522,7 @@ void DFSPHSolver::correctDivergenceError()
 
                 Vector3r sum(0.0, 0.0, 0.0);
 
-                Real kiv = divError_i * alpha_i / ts;
+                Real kiv = divError_i * alpha_i / (ts * dens_i);
 
                 // Warm start
                 kv[fmIndex][i] += divError_i * alpha_i;
@@ -538,47 +536,44 @@ void DFSPHSolver::correctDivergenceError()
                     Real divError_j = getDivError(fmIndex, j);
                     Real alpha_j = getAlpha(fmIndex, j);
 
-                    Real kjv = divError_j * alpha_j / ts;
-                    Real kSumV = (kiv / dens_i + kjv / dens_j);
+                    Real kjv = divError_j * alpha_j / (ts * dens_j);
+                    Real kSumV = (kiv + kjv);
 
                     if (fabs(kSumV) > eps)
                         sum += fm -> getMass(j) * kSumV * CubicSpline::gradW(ri - rj);
                 );
 
-                if (boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD)
+                if (fabs(kiv) > eps)
                 {
-                    forall_boundary_neighbors
-                    (
-                        PCISPHBoundaryModel *bm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
+                    if (boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD)
+                    {
+                        forall_boundary_neighbors
+                        (
+                            PCISPHBoundaryModel *bm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
 
-                        Vector3r & rb = bm -> getPosition(b);
+                            Vector3r & rb = bm -> getPosition(b);
 
-                        Real kSum = kiv / dens_i;
+                            sum += bm -> getMass() * kiv * CubicSpline::gradW(ri - rb);
+                        );
+                    } 
+                    else if (boundaryMethod == Simulation::AKINCI_BOUNDARY_METHOD)
+                    {
+                        forall_boundary_neighbors
+                        (
+                            AkinciBoundaryModel *bm = static_cast<AkinciBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
 
-                        if (fabs(kSum) > eps)
-                            sum += bm -> getMass() * kSum * CubicSpline::gradW(ri - rb);
-                    );
-                } 
-                else if (boundaryMethod == Simulation::AKINCI_BOUNDARY_METHOD)
-                {
-                    forall_boundary_neighbors
-                    (
-                        AkinciBoundaryModel *bm = static_cast<AkinciBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
+                            Vector3r & rb = bm -> getPosition(b);
 
-                        Vector3r & rb = bm -> getPosition(b);
-
-                        Real kSum = kiv / dens_i; // densidad al cuadrado? (como en el paper)
-
-                        if (fabs(kSum) > eps)
-                            sum += density0 * bm -> getVolume(b) * kSum * CubicSpline::gradW(ri - rb);
-                    );
-                } 
+                            sum += density0 * bm -> getVolume(b) * kiv * CubicSpline::gradW(ri - rb);
+                        );
+                    }
+                }
 
                 vi -= ts * sum;
             } 
-
-            computeDivergenceError();
         }
+
+        computeDivergenceError();
 
         ++iterationsV;
     }
@@ -598,220 +593,94 @@ void DFSPHSolver::densityWarmStart()
     Real ts = sim -> getTimeStep();
     Real ts2 = ts * ts;
 
-    ////// WARM START ////// 
-    if (sim -> getTimeStep() > 0.0)
+    for (unsigned int fmIndex = 0; fmIndex < nFluidModels; ++fmIndex)
     {
-        //predictDensities();
+        FluidModel *fm = sim -> getFluidModel(fmIndex);
+        unsigned int numParticles = fm -> getNumActiveParticles();
 
-        for (unsigned int fmIndex = 0; fmIndex < nFluidModels; ++fmIndex)
+        #pragma omp parallel for
+        for (unsigned int i = 0; i < numParticles; ++i)
         {
-            FluidModel *fm = sim -> getFluidModel(fmIndex);
-            unsigned int numParticles = fm -> getNumActiveParticles();
-            Real density0 = fm -> getRefDensity();
-
-            #pragma omp parallel for
-            for (unsigned int i = 0; i < numParticles; ++i)
-            {
-                //if (getPredDensity(fmIndex, i) > density0)
-                //{
-                    Real dens_i = fm -> getDensity(i);
-                    //k[fmIndex][i] *= 1.0 / (ts2 * dens_i);
-                    //k[fmIndex][i] = - glm::max(-k[fmIndex][i] / dens_i, -0.000000001) / ts2; // asi vibra poco y el paso de tiempo aumenta respecto a no usar warm start y respecto a utilizar la linea de arriba
-                    k[fmIndex][i] = - glm::max(-k[fmIndex][i] / dens_i, -0.0000000005) / ts2; // asi vibran poco pero el paso de tiempo no aumenta tanto como con la linea de arriba
-                //}
-                //else
-                //{
-                //    k[fmIndex][i] = 0.0;
-                //}
-            }
-        }
-
-        for (unsigned int fmIndex = 0; fmIndex < nFluidModels; ++fmIndex)
-        {
-            FluidModel *fm = sim -> getFluidModel(fmIndex);
-            unsigned int numParticles = fm -> getNumActiveParticles();
-            Real density0 = fm -> getRefDensity();
-
-            #pragma omp parallel for
-            for (unsigned int i = 0; i < numParticles; ++i)
-            {
-                //if (getPredDensity(fmIndex, i) > density0)
-                {
-                    Vector3r & ri = fm -> getPosition(i);
-                    Vector3r & vi = fm -> getVelocity(i);
-
-                    Vector3r sum(0.0, 0.0, 0.0);
-
-                    Real ki = k[fmIndex][i];
-
-                    Vector3i cellId = floor(ri / supportRadius);
-
-
-                    forall_fluid_neighbors_in_same_phase
-                    (
-                        Vector3r & rj = fm -> getPosition(j);
-
-                        Real kj = k[fmIndex][j];
-
-                        Real kSum = (ki + kj);
-
-                        if (fabs(kSum) > eps) // ver si sirve de algo (probablemente solo para ahorrar tiempo)
-                            sum += fm -> getMass(j) * kSum * CubicSpline::gradW(ri - rj);;
-                    );
-
-                    if (boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD)
-                    {
-                        forall_boundary_neighbors
-                        (
-                            PCISPHBoundaryModel *bm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
-
-                            Vector3r & rb = bm -> getPosition(b);
-
-                            Real kSum = ki;
-
-                            if (fabs(kSum > eps))
-                                sum += bm -> getMass() * kSum * CubicSpline::gradW(ri - rb);
-                        );
-                    } 
-                    else if (boundaryMethod == Simulation::AKINCI_BOUNDARY_METHOD)
-                    {
-                        forall_boundary_neighbors
-                        (
-                            AkinciBoundaryModel *bm = static_cast<AkinciBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
-
-                            Vector3r & rb = bm -> getPosition(b);
-
-                            Real kSum = 2.0 * ki; 
-
-                            if (fabs(kSum) > eps)
-                                sum += density0 * bm -> getVolume(b) * kSum * CubicSpline::gradW(ri - rb);
-                        );
-                    }
-
-                    vi -= sum * ts;
-                }
-            }
-        }
-
-        for (unsigned int fmIndex = 0; fmIndex < nFluidModels; ++fmIndex)
-        {
-            FluidModel *fm = sim -> getFluidModel(fmIndex);
-            unsigned int numParticles = fm -> getNumActiveParticles();
-
-            #pragma omp parallel for
-            for (unsigned int i = 0; i < numParticles; ++i)
-            {
-                k[fmIndex][i] = 0.0;
-            }
+            Real dens_i = fm -> getDensity(i);
+            k[fmIndex][i] = - glm::max(-k[fmIndex][i] / dens_i, -0.000000001) / ts2; // asi vibra poco y el paso de tiempo aumenta respecto a no usar warm start y respecto a utilizar la linea de arriba
+            //k[fmIndex][i] = - glm::max(-k[fmIndex][i] / dens_i, -0.0000000005) / ts2; // asi vibran poco pero el paso de tiempo no aumenta tanto como con la linea de arriba
         }
     }
 
-    /*if (sim -> getTimeStep() > 0.0)
+    for (unsigned int fmIndex = 0; fmIndex < nFluidModels; ++fmIndex)
     {
-        //predictDensities();
+        FluidModel *fm = sim -> getFluidModel(fmIndex);
+        unsigned int numParticles = fm -> getNumActiveParticles();
+        Real density0 = fm -> getRefDensity();
 
-        for (unsigned int fmIndex = 0; fmIndex < nFluidModels; ++fmIndex)
+        #pragma omp parallel for
+        for (unsigned int i = 0; i < numParticles; ++i)
         {
-            FluidModel *fm = sim -> getFluidModel(fmIndex);
-            unsigned int numParticles = fm -> getNumActiveParticles();
-            Real density0 = fm -> getRefDensity();
+            Vector3r & ri = fm -> getPosition(i);
+            Vector3r & vi = fm -> getVelocity(i);
 
-            #pragma omp parallel for
-            for (unsigned int i = 0; i < numParticles; ++i)
+            Vector3r sum(0.0, 0.0, 0.0);
+
+            Real ki = k[fmIndex][i];
+
+            Vector3i cellId = floor(ri / supportRadius);
+
+            forall_fluid_neighbors_in_same_phase
+            (
+                Vector3r & rj = fm -> getPosition(j);
+
+                Real kj = k[fmIndex][j];
+
+                Real kSum = (ki + kj);
+
+                if (fabs(kSum) > eps) 
+                    sum += fm -> getMass(j) * kSum * CubicSpline::gradW(ri - rj);
+            );
+
+            if (boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD)
             {
-                if (getPredDensity(fmIndex, i) > density0)
-                {
-                    Real dens_i = fm -> getDensity(i);
-                    //k[fmIndex][i] *= 1.0 / (ts2 * dens_i);
-                    //k[fmIndex][i] = - glm::max(-k[fmIndex][i] / dens_i, -0.000000001) / ts2; // asi vibra poco y el paso de tiempo aumenta respecto a no usar warm start y respecto a utilizar la linea de arriba
-                    k[fmIndex][i] = - glm::max(-k[fmIndex][i] / dens_i, -0.0000000005) / ts2; // asi vibran poco pero el paso de tiempo no aumenta tanto como con la linea de arriba
-                }
-                else
-                {
-                    k[fmIndex][i] = 0.0;
-                }
-            }
-        }
+                forall_boundary_neighbors
+                (
+                    PCISPHBoundaryModel *bm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
 
-        for (unsigned int fmIndex = 0; fmIndex < nFluidModels; ++fmIndex)
+                    Vector3r & rb = bm -> getPosition(b);
+
+                    Real kSum = ki;
+
+                    if (fabs(kSum) > eps)
+                        sum += bm -> getMass() * kSum * CubicSpline::gradW(ri - rb);
+                );
+            } 
+            else if (boundaryMethod == Simulation::AKINCI_BOUNDARY_METHOD)
+            {
+                forall_boundary_neighbors
+                (
+                    AkinciBoundaryModel *bm = static_cast<AkinciBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
+
+                    Vector3r & rb = bm -> getPosition(b);
+
+                    Real kSum = 2.0 * ki; // Mejora la estabilidad del warm start
+
+                    if (fabs(kSum) > eps)
+                        sum += density0 * bm -> getVolume(b) * kSum * CubicSpline::gradW(ri - rb);
+                );
+            }
+
+            vi -= sum * ts;
+        }
+    }
+
+    for (unsigned int fmIndex = 0; fmIndex < nFluidModels; ++fmIndex)
+    {
+        FluidModel *fm = sim -> getFluidModel(fmIndex);
+        unsigned int numParticles = fm -> getNumActiveParticles();
+
+        #pragma omp parallel for
+        for (unsigned int i = 0; i < numParticles; ++i)
         {
-            FluidModel *fm = sim -> getFluidModel(fmIndex);
-            unsigned int numParticles = fm -> getNumActiveParticles();
-            Real density0 = fm -> getRefDensity();
-
-            #pragma omp parallel for
-            for (unsigned int i = 0; i < numParticles; ++i)
-            {
-                //if (getPredDensity(fmIndex, i) > density0)
-                {
-                    Vector3r & ri = fm -> getPosition(i);
-                    Vector3r & vi = fm -> getVelocity(i);
-
-                    Vector3r sum(0.0, 0.0, 0.0);
-
-                    Real ki = k[fmIndex][i];
-
-                    Vector3i cellId = floor(ri / supportRadius);
-
-
-                    forall_fluid_neighbors_in_same_phase
-                    (
-                        Vector3r & rj = fm -> getPosition(j);
-
-                        Real kj = k[fmIndex][j];
-
-                        Real kSum = (ki + kj);
-
-                        if (fabs(kSum) > eps) // ver si sirve de algo (probablemente solo para ahorrar tiempo)
-                            sum += fm -> getMass(j) * kSum * CubicSpline::gradW(ri - rj);;
-                    );
-
-                    if (boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD)
-                    {
-                        forall_boundary_neighbors
-                        (
-                            PCISPHBoundaryModel *bm = static_cast<PCISPHBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
-
-                            Vector3r & rb = bm -> getPosition(b);
-
-                            Real kSum = ki;
-
-                            if (fabs(kSum > eps))
-                                sum += bm -> getMass() * kSum * CubicSpline::gradW(ri - rb);
-                        );
-                    } 
-                    else if (boundaryMethod == Simulation::AKINCI_BOUNDARY_METHOD)
-                    {
-                        forall_boundary_neighbors
-                        (
-                            AkinciBoundaryModel *bm = static_cast<AkinciBoundaryModel*>(sim -> getBoundaryModel(nbmIndex));
-
-                            Vector3r & rb = bm -> getPosition(b);
-
-                            Real kSum = 2.0 * ki; 
-
-                            if (fabs(kSum) > eps)
-                                sum += density0 * bm -> getVolume(b) * kSum * CubicSpline::gradW(ri - rb);
-                        );
-                    }
-
-                    vi -= sum * ts;
-                }
-            }
+            k[fmIndex][i] = 0.0;
         }
-
-        for (unsigned int fmIndex = 0; fmIndex < nFluidModels; ++fmIndex)
-        {
-            FluidModel *fm = sim -> getFluidModel(fmIndex);
-            unsigned int numParticles = fm -> getNumActiveParticles();
-
-            #pragma omp parallel for
-            for (unsigned int i = 0; i < numParticles; ++i)
-            {
-                k[fmIndex][i] = 0.0;
-            }
-        }
-    }*/
+    }
 }
 
 void DFSPHSolver::divergenceWarmStart()
@@ -823,10 +692,9 @@ void DFSPHSolver::divergenceWarmStart()
     Real supportRadius = sim -> getSupportRadius();
     Real ts = sim -> getTimeStep();
 
-    /////// WARM START /////////
     if (sim -> getTimeStep() > 0.0)
     {
-        computeDivergenceError();
+        //computeDivergenceError();
 
         for (unsigned int fmIndex = 0; fmIndex < nFluidModels; ++fmIndex)
         {
@@ -950,7 +818,6 @@ void DFSPHSolver::resizeData()
     }
 }
 
-
 void DFSPHSolver::updateTimeStep()
 {
     Simulation *sim = Simulation::getCurrent();
@@ -958,7 +825,6 @@ void DFSPHSolver::updateTimeStep()
     Real ts = sim -> getTimeStep();
 
     maxVel = 0.1;
-    //maxAcc = 0.00;
     for (unsigned int fmIndex = 0; fmIndex < nFluidModels; ++fmIndex)
     {
         FluidModel *fm = sim -> getFluidModel(fmIndex);
@@ -974,12 +840,13 @@ void DFSPHSolver::updateTimeStep()
             Vector3r current_vi = vi + acc * ts;
 
             maxVel = glm::max(maxVel, sqrt(length(current_vi)));
-            //maxAcc = glm::max(maxAcc, length(acc));
         }
     }
 
     Real newTs;
-    Real cflTs = 1.0 * 0.4 * 2.0 * sim -> getParticleRadius() / maxVel; 
+    Real cflTs = cflFactor * 0.4 * 2.0 * sim -> getParticleRadius() / maxVel; 
+
+    //newTs = cflTs;
 
     if (cflTs < ts)
         newTs = cflTs;
@@ -995,4 +862,5 @@ void DFSPHSolver::updateTimeStep()
     
     LOG("Current time step -> ", newTs, " s (", cflTs, " s)");
 }
+
 

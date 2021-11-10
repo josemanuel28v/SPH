@@ -1,5 +1,5 @@
-#ifndef __StringTools_h__
-#define __StringTools_h__
+#ifndef _StringTools_h_
+#define _StringTools_h_
 
 #include <vector>
 #include <iostream>

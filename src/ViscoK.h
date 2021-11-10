@@ -11,8 +11,6 @@ class ViscoK
         static Real supportRadius2;
         static Real supportRadius3;
         static Real supportRadius6;
-        //static Real valueCoef;
-        //static Real gradCoef;
         static Real laplCoef;
 
     public:
@@ -23,8 +21,6 @@ class ViscoK
             supportRadius2 = sr * sr;
             supportRadius3 = sr * sr * sr ;
             supportRadius6 = sr * sr * sr * sr * sr * sr;
-            //valueCoef = 15 / (2 * M_PI * supportRadius3);
-            //gradCoef = 15 / (2 * M_PI * supportRadius3);
             laplCoef = 45 / (M_PI * supportRadius6);
         }
 

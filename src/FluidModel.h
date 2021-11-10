@@ -19,16 +19,12 @@ class FluidModel
         std::vector<Vector3r> r;
         std::vector<Vector3r> v;
         std::vector<Vector3r> a;
-        std::vector<Vector3r> n; // Utilizada en pcisphboundarymodel y probablemente en la st de akinci
+        std::vector<Vector3r> n; // Mover a PCISPHBoundaryModel
 
         unsigned int numParticles;
         unsigned int numActiveParticles;
 
         std::vector<NonPressureForce*> npForces;
-
-        // vector con los ids de las particulas, puede que ahora no se necesite pero cuando se ordenen las particulas se necesitara
-        
-        // Puntero al emisor de particulas
         std::vector<Emitter> emitters;
 
     public:
@@ -40,7 +36,6 @@ class FluidModel
         void resizeFluid(const unsigned int);
         void cleanFluid();
 
-        // setters
         void setMasses(const Real);
         void setRefDensity(Real density_0) { this -> density_0 = density_0; }
         void setVolume(Real volume) { this -> volume = volume; }
@@ -52,7 +47,6 @@ class FluidModel
         void setAcceleration(const unsigned int i, const Vector3r & a) { this -> a[i] = a; }
         void setNormal(const unsigned int i, const Vector3r & n) { this -> n[i] = n; }
 
-        // getters (Devuelven referencias no copias / Pensar el caso de devolver copias constantes)
         Real& getRefDensity() { return density_0; }
         Real& getVolume() { return volume; }
         Real& getMass(const unsigned int i) { return mass[i]; }
@@ -75,13 +69,16 @@ class FluidModel
         void setSurfaceTensionForce(Real);
         void setAdhesionForce(Real);
 
-        void addEmitter(unsigned int type, unsigned int numParticles, Vector3r r, Real v, Matrix4r rot, Real startTime, Real w, Real h);
+        void addEmitter(unsigned int type, unsigned int numParticles, Vector3r r, Real v, Quat4r rot, Real startTime, Real w, Real h, Real s);
         void emitParticles();
 
-        // particulas activas de un fm (se necesita para el programa de opengl antiguo)
+        // Necesario para pintar colores en OpenGL
         std::vector<Vector3r> & getPositions();
         std::vector<Real> & getPressures();
         std::vector<Real>  getVelocities();
+
+        // Pausar emisores desde la interfaz de OpenGL
+        void setEmittersPause(bool pause) { for (auto & emitter: emitters) { emitter.setPause(pause); } }
 };
 
 #endif

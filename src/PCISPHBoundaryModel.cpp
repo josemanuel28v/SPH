@@ -4,31 +4,60 @@
 #include "DFSPHSolver.h"
 #include <iostream>
 
-void PCISPHBoundaryModel::init(std::vector<Vector3r> & points)
+void PCISPHBoundaryModel::addCube(Vector3r min, Vector3r max, bool inverted)
 {
-    BoundaryModel::init(points);
+    unsigned int currentBoundaryParticles = size();
+    std::vector<Vector3r> points;
+    std::vector<Vector3r> normals;
 
-    normalFct = 0.0;
-    tangentialFct = 1.0;
+    sampleCube(min, max, points, normals);
 
-    sample();
+    resizeBoundary(currentBoundaryParticles + points.size());
+
+    Real inv;
+    inverted ? inv = 1.0 : inv = -1;
+
+    for (unsigned int i = 0; i < points.size(); ++i)
+    {
+        unsigned int id = currentBoundaryParticles + i;
+
+        r[id] = points[i];
+        n[id] = inv * normals[i];
+        v[id] = Vector3r(0.0, 0.0, 0.0);
+        density[id] = 0.0;
+        pressure[id] = 0.0;
+    }
 }
 
-void PCISPHBoundaryModel::sample()
+void PCISPHBoundaryModel::addSphere(Vector3r pos, Real radius, bool inverted)
 {
-    if (r.size() == 1)
-        sampleSphere();
-    else if (r.size() == 2)
-        sampleCube();
+    unsigned int currentBoundaryParticles = size();
+    std::vector<Vector3r> points;
+
+    sampleSphere(pos, radius, points);
+
+    resizeBoundary(currentBoundaryParticles + points.size());
+
+    Real inv;
+    inverted ? inv = 1.0 : inv = -1;
+
+    for (unsigned int i = 0; i < points.size(); ++i)
+    {
+        unsigned int id = currentBoundaryParticles + i;
+
+        r[id] = points[i];
+        n[id] = inv * (pos - points[i]);
+        v[id] = Vector3r(0.0, 0.0, 0.0);
+        density[id] = 0.0;
+        pressure[id] = 0.0;
+    }
 }
 
-void PCISPHBoundaryModel::sampleCube()
+void PCISPHBoundaryModel::sampleCube(Vector3r min, Vector3r max, std::vector<Vector3r> & points, std::vector<Vector3r> & normals)
 {
     Simulation *sim = Simulation::getCurrent();
 
     // Longitud del cubo en cada eje
-    Vector3r min = getPosition(0);
-    Vector3r max = getPosition(1);
     Real supportRadius = sim -> getSupportRadius();
 
     Real lx = glm::abs(min.x - max.x);
@@ -80,8 +109,6 @@ void PCISPHBoundaryModel::sampleCube()
     Vector3r leftFrontTopNormal = glm::normalize((leftNormal + frontNormal + topNormal) / static_cast<Real>(3.0));
     Vector3r rightFrontTopNormal = glm::normalize((rightNormal + frontNormal + topNormal) / static_cast<Real>(3.0));
 
-    vector<Vector3r> boundary_position;
-    vector<Vector3r> boundary_normal;
     unsigned count = 0;
     for (uint i = 0; i <= nx; i++)
         for (uint j = 0; j <= ny; j++)
@@ -92,95 +119,79 @@ void PCISPHBoundaryModel::sampleCube()
                 {
                     Vector3r position(i * dx, j * dy, k * dz);
                     position += min;
-                    boundary_position.push_back(position);
+                    points.push_back(position);
 
                     // Corners
                     if (i == 0 && j == 0 && k == 0)
-                        boundary_normal.push_back(leftBehindBottomNormal);
+                        normals.push_back(leftBehindBottomNormal);
                     else if (i == nx && j == 0 && k == 0)
-                        boundary_normal.push_back(rightBehindBottomNormal);
+                        normals.push_back(rightBehindBottomNormal);
                     else if (i == 0 && j == 0 && k == nz)
-                        boundary_normal.push_back(leftFrontBottomNormal);
+                        normals.push_back(leftFrontBottomNormal);
                     else if (i == nx && j == 0 && k == nz)
-                        boundary_normal.push_back(rightFrontBottomNormal);
+                        normals.push_back(rightFrontBottomNormal);
                     else if (i == 0 && j == ny && k == 0)
-                        boundary_normal.push_back(leftBehindTopNormal);
+                        normals.push_back(leftBehindTopNormal);
                     else if (i == nx && j == ny && k == 0)
-                        boundary_normal.push_back(rightBehindTopNormal);
+                        normals.push_back(rightBehindTopNormal);
                     else if (i == 0 && j == ny && k == nz)
-                        boundary_normal.push_back(leftFrontTopNormal);
+                        normals.push_back(leftFrontTopNormal);
                     else if (i == nx && j == ny && k == nz)
-                        boundary_normal.push_back(rightFrontTopNormal);
+                        normals.push_back(rightFrontTopNormal);
 
                     // Edges
                     else if (i == 0 && j == 0 && k > 0 && k < nz)
-                        boundary_normal.push_back(leftBottomNormal);
+                        normals.push_back(leftBottomNormal);
                     else if (i > 0 && i < nx && j == 0 && k == 0)
-                        boundary_normal.push_back(behindBottomNormal);
+                        normals.push_back(behindBottomNormal);
                     else if (i > 0 && i < nx && j == 0 && k == nz)
-                        boundary_normal.push_back(frontBottomNormal);
+                        normals.push_back(frontBottomNormal);
                     else if (i == nx && j == 0 && k > 0 && k < nz)
-                        boundary_normal.push_back(rightBottomNormal);
+                        normals.push_back(rightBottomNormal);
 
                     else if (i == 0 && j == ny && k > 0 && k < nz)
-                        boundary_normal.push_back(leftTopNormal);
+                        normals.push_back(leftTopNormal);
                     else if (i > 0 && i < nx && j == ny && k == 0)
-                        boundary_normal.push_back(behindTopNormal);
+                        normals.push_back(behindTopNormal);
                     else if (i > 0 && i < nx && j == ny && k == nz)
-                        boundary_normal.push_back(frontTopNormal);
+                        normals.push_back(frontTopNormal);
                     else if (i == nx && j == ny && k > 0 && k < nz)
-                        boundary_normal.push_back(rightTopNormal);
+                        normals.push_back(rightTopNormal);
 
                     else if (i == 0 && j > 0 && j < ny && k == 0)
-                        boundary_normal.push_back(leftBehindNormal);
+                        normals.push_back(leftBehindNormal);
                     else if (i == nx && j > 0 && j < ny && k == 0)
-                        boundary_normal.push_back(rightBehindNormal);
+                        normals.push_back(rightBehindNormal);
                     else if (i == nx && j > 0 && j < ny && k == nz)
-                        boundary_normal.push_back(rightFrontNormal);
+                        normals.push_back(rightFrontNormal);
                     else if (i == 0 && j > 0 && j < ny && k == nz)
-                        boundary_normal.push_back(leftFrontNormal);
+                        normals.push_back(leftFrontNormal);
 
                     // Faces
                     else if (i == 0 && j > 0 && j < ny && k > 0 && k < nz)
-                        boundary_normal.push_back(leftNormal);
+                        normals.push_back(leftNormal);
                     else if (i == nx && j > 0 && j < ny && k > 0 && k < nz)
-                        boundary_normal.push_back(rightNormal);
+                        normals.push_back(rightNormal);
                     else if (i > 0 && i < nx && j == ny && k > 0 && k < nz)
-                        boundary_normal.push_back(topNormal);
+                        normals.push_back(topNormal);
                     else if (i > 0 && i < nx && j == 0 && k > 0 && k < nz)
-                        boundary_normal.push_back(bottomNormal);
+                        normals.push_back(bottomNormal);
                     else if (i > 0 && i < nx && j > 0 && j < ny && k == nz)
-                        boundary_normal.push_back(frontNormal);
+                        normals.push_back(frontNormal);
 
                     else if (i > 0 && i < nx && j > 0 && j < ny && k == 0)
-                        boundary_normal.push_back(behindNormal);                    
+                        normals.push_back(behindNormal);                    
 
                     count++;
                 }
-
-    resizeBoundary(boundary_position.size()); // Añadir las particulas fantasma;
-
-    for (uint i = 0; i < boundary_position.size(); i++)
-    {
-        r[i] = boundary_position[i];
-        n[i] = boundary_normal[i];
-        v[i] = Vector3r(0, 0, 0);
-        density[i] = 0;
-        pressure[i] = 0;
-    }
 }
 
-void PCISPHBoundaryModel::sampleSphere()
+void PCISPHBoundaryModel::sampleSphere(Vector3r origen, Real radius, std::vector<Vector3r> & points)
 {
     Simulation *sim = Simulation::getCurrent();
 
-    Vector3r origen = getPosition(0);
-    Real radius = getRadius(); // mitad de dimensions en blender
-
     Real separacion = 1.5; // 1 indica sin solaparse, cuanto mayor sea, mas se solaparan
     unsigned num_parts = floor(4.0 * M_PI * radius * radius / (M_PI * sim -> getParticleRadius() * sim -> getParticleRadius()) * separacion); // Superficie de la boundary sphere / superficie de un circulo con el radio de la particula del fluido
-
-    vector<Vector3r> boundary_position;
 
     // Equidistant sphere
     Real a = 4.0 * M_PI  / num_parts;
@@ -200,19 +211,8 @@ void PCISPHBoundaryModel::sampleSphere()
             Real y = sin(theta) * sin(phi);
             Real z = cos(theta);
 
-            boundary_position.push_back(radius * Vector3r(x, y, z) + origen);
+            points.push_back(radius * Vector3r(x, y, z) + origen);
         }
-    }
-
-    resizeBoundary(boundary_position.size()); // Añadir las particulas fantasma;
-
-    for (uint i = 0; i < boundary_position.size(); i++)
-    {
-        r[i] = boundary_position[i];
-        v[i] = Vector3r(0, 0, 0);
-        n[i] = glm::normalize(origen - boundary_position[i]);
-        density[i] = 0;
-        pressure[i] = 0;
     }
 }
 

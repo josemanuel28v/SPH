@@ -17,10 +17,10 @@ class AdhesionForce: public NonPressureForce
 
         Real beta;
 
-
     public:
 
         AdhesionForce(FluidModel *fm) :NonPressureForce(fm) { resize(fm -> getNumParticles()); }
+        ~AdhesionForce() {}
 
         void init(Real beta)
         {
@@ -62,6 +62,7 @@ class AdhesionForce: public NonPressureForce
         }
 
         void resize(const unsigned int size) { }
+        Real getAdhesion() { return beta; }
 };
 
 #endif 

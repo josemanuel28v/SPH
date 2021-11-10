@@ -1,4 +1,5 @@
 #include "ShaderLoader.h"
+#include "Logger.h"
 
 ShaderLoader::ShaderLoader(GLuint programID)
 {
@@ -23,8 +24,7 @@ void ShaderLoader::loadSource(std::string filename, GLuint id)
     std::ifstream f(filename.c_str());
     if (!f.is_open()) 
     {
-        std::cerr << "File not found " << filename.c_str() << std::endl;
-        //system("pause");
+        ERROR("File not found ", filename.c_str());
         exit(EXIT_FAILURE);
     }
 
@@ -54,7 +54,8 @@ void ShaderLoader::printCompileInfoLog(GLuint id)
         GLint chsWritten = 0;
         glGetShaderInfoLog( id, infoLength, &chsWritten, infoLog );
 
-        std::cerr << "Shader compiling failed:" << infoLog << std::endl;
+        ERROR("Shader compiling failed: ", infoLog);
+
         //system("pause");
         delete [] infoLog;
 
@@ -75,7 +76,7 @@ void ShaderLoader::printLinkInfoLog()
         GLint chsWritten = 0;
         glGetProgramInfoLog( programID, infoLength, &chsWritten, infoLog );
 
-        std::cerr << "Shader linking failed:" << infoLog << std::endl;
+        ERROR("Shader linking failed: ", infoLog);
         //system("pause");
         delete [] infoLog;
 
@@ -99,7 +100,7 @@ void ShaderLoader::validateProgram()
             GLchar *infoLog = new GLchar[infoLength];
             GLint chsWritten = 0;
             glGetProgramInfoLog( programID, infoLength, &chsWritten, infoLog );
-            std::cerr << "Program validating failed:" << infoLog << std::endl;
+            ERROR("Program validating failed: ",  infoLog);
             //system("pause");
             delete [] infoLog;
 
@@ -124,13 +125,13 @@ void ShaderLoader::loadShaders()
     for (unsigned i = 0; i < filenames.size(); ++i)
     {
         loadSource(filenames[i], shaderIDs[i]);             // Leer cada shader
-        std::cout << "Compilando shader " << filenames[i] << std::endl;
+        LOG("Compilando shader ", filenames[i]);
         glCompileShader(shaderIDs[i]);                      // Compilar shader
         printCompileInfoLog(shaderIDs[i]);                  // Imprimir log de compilacion
         glAttachShader(programID, shaderIDs[i]);            // Añadir el shader al programa
     }
     glLinkProgram(programID);                               // Enlazar programa
-    std::cout << "Linkando objeto programa ..." << std::endl;
+    LOG("Linkando objeto programa ...");
     printLinkInfoLog();
     validateProgram();                                  
 }

@@ -10,14 +10,18 @@
 
 FluidModel::FluidModel()
 {
-    //inicializar variables y punteros que no se usen al principio a nullptr
+    // Inicializar variables y punteros que no se usen al principio a nullptr
     density_0 = 1000;
+
+    numParticles = 0;
+    numActiveParticles = 0;
 }
 
 FluidModel::~FluidModel()
 {
-    // borrar punteros
-    for (unsigned int i = 0 ; i < npForces.size(); ++i)
+    // Borrar contenido de punteros
+
+    for (unsigned int i = 0; i < npForces.size(); ++i)
         delete npForces[i];
 
     cleanFluid();
@@ -25,6 +29,7 @@ FluidModel::~FluidModel()
 
 void FluidModel::setMasses(const Real mass)
 {
+    #pragma omp parallel for
     for (unsigned int i = 0; i < getNumParticles(); ++i)
         setMass(i, mass);
 }
@@ -39,7 +44,6 @@ void FluidModel::init(std::vector<Vector3r> & fluidPoints, std::vector<Vector3r>
         v[i] = fluidVelocities[i];
     }
 
-    // establecer el número aqui de momento hasta que se añadan los emisores 
     numParticles = fluidPoints.size();
     numActiveParticles = numParticles;
 }
@@ -117,23 +121,20 @@ void FluidModel::setAdhesionForce(Real beta)
     }
 }
 
-void FluidModel::addEmitter(unsigned int type, unsigned int numParticles, Vector3r r, Real v, Matrix4r rot, Real startTime, Real w, Real h)
+void FluidModel::addEmitter(unsigned int type, unsigned int numParticles, Vector3r r, Real v, Quat4r rot, Real startTime, Real w, Real h, Real spacing)
 {
     Simulation *sim = Simulation::getCurrent();
     SPHSolver *solver = sim -> getSolver();
     HashTable *grid = sim -> getGrid();
 
-    Emitter emitter(this, type, numParticles, r, v, rot, startTime, w, h);
+    Emitter emitter(this, type, numParticles, r, v, rot, startTime, w, h, spacing);
 
     // Cada vez que se añade un emisor se modifica el numero total de particulas de fluidModel y se redimensiona el solver y las nonpresureforces
     this -> numParticles += numParticles;
+
     resizeFluid(this -> numParticles);
-
     solver -> resizeData();
-
     grid -> reserve(2 * this -> numParticles);
-
-    setMasses(density_0 * 4.0 / 3.0 * M_PI * pow(sim -> getParticleRadius(), 3.0));
 
     for (unsigned int i = 0; i < npForces.size(); ++i)
         npForces[i] -> resize(this -> numParticles);

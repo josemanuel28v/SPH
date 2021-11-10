@@ -23,17 +23,13 @@ class SPHSolver
         SPHSolver();
         virtual ~SPHSolver();
 
-        // Suponiendo que todos los metodos calculan la densidad de la misma forma
+        // Calculo de densidad fijo para todos los solvers
         virtual void computeFluidDensities(const unsigned int);
         virtual void computeBoundaryDensities(const unsigned int);
         virtual void computeDensities();
 
         virtual void integrate();
 
-        // Suponiendo que todos los metodos obtienen los vecinos de la misma forma
-        // De momento el solver inserta siempre en la tabla hash las particulas 
-        // de todos los fluidModels y fluidBoundaries
-        // Estos metodos cambiaran si se modifica el metodo de busqueda de vecinos
         virtual void insertFluidParticles();
         virtual void insertBoundaryParticles();
         virtual void neighborhoodSearch();

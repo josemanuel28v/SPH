@@ -20,6 +20,7 @@ class ArtificialViscosity: public NonPressureForce
     public:
 
         ArtificialViscosity(FluidModel *fm) :NonPressureForce(fm) {}
+        ~ArtificialViscosity() {}
 
         void init(Real viscosity, Real boundaryViscosity)
         {
@@ -57,9 +58,9 @@ class ArtificialViscosity: public NonPressureForce
 				    const Real dens_j = fm -> getDensity(j);
                     const Real sqDist = length(rirj) * length(rirj);
 
-                    //Real kij = 2 * density0 / (dens_i + dens_j);
+                    Real kij = 2 * density0 / (dens_i + dens_j); // Symmetry factor
 
-                    ai += /*kij **/ 10.0 * 0.1 * viscosity * (fm -> getMass(j) / dens_j) * dotProd / (sqDist + 0.01 * h2) * CubicSpline::gradW(rirj);
+                    ai += kij * 10.0 * 0.1 * viscosity * (fm -> getMass(j) / dens_j) * dotProd / (sqDist + 0.01 * h2) * CubicSpline::gradW(rirj);
                 );
 
                 if (boundaryViscosity != 0.0 && boundaryMethod == Simulation::AKINCI_BOUNDARY_METHOD)
@@ -82,6 +83,8 @@ class ArtificialViscosity: public NonPressureForce
         }
 
         void resize(const unsigned int ) {}
+        Real getViscosity() { return viscosity; }
+        Real getBoundaryViscosity() { return boundaryViscosity; }
 };
 
 #endif 

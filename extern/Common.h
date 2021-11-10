@@ -1,5 +1,5 @@
-#ifndef __Common_h__
-#define __Common_h__
+#ifndef _Common_h_
+#define _Common_h_
 
 #include <eigen3/Eigen/Dense>
 

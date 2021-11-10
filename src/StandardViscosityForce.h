@@ -20,7 +20,6 @@ class StandardViscosityForce: public NonPressureForce
 
         StandardViscosityForce(FluidModel *fm) :NonPressureForce(fm) {}
 
-        // init?
         void init(Real viscosity, Real boundaryViscosity)
         {
             this -> viscosity = viscosity;
@@ -35,7 +34,6 @@ class StandardViscosityForce: public NonPressureForce
             int boundaryMethod = sim -> getBoundaryHandlingMethod();
             Real density0 = fm -> getRefDensity();
 
-            // Calcular densidad para las particulas de fluido vecinas del mismo fluidModel
             #pragma omp parallel for num_threads(16)
             for (unsigned int i = 0; i < numParticles; ++i)
             {
@@ -47,7 +45,6 @@ class StandardViscosityForce: public NonPressureForce
 
                 Vector3i cellId = floor(ri / sim -> getSupportRadius());
 
-                // contribución de las partículas de fluido vecinas
                 forall_fluid_neighbors_in_same_phase
                 (
                     Vector3r & rj = fm -> getPosition(j);
@@ -78,11 +75,13 @@ class StandardViscosityForce: public NonPressureForce
 
                     ai += viscoForce;
                 }
-                // casos de los distintos boudarymodels
             }
         }
 
         void resize(const unsigned int ) {}
+
+        Real getViscosity() { return viscosity; }
+        Real getBoundaryViscosity() { return boundaryViscosity; }
 };
 
 #endif 

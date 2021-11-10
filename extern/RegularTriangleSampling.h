@@ -1,5 +1,5 @@
-#ifndef __RegularTriangleSampling_H__
-#define __RegularTriangleSampling_H__
+#ifndef _RegularTriangleSampling_H_
+#define _RegularTriangleSampling_H_
 
 #include "Common.h"
 
@@ -42,4 +42,4 @@ namespace SPH
 	};
 }
 
-#endif // __RegularTriangleSampling_H__
+#endif 

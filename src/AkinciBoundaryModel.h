@@ -3,6 +3,7 @@
 
 #include "BoundaryModel.h"
 #include "types.h"
+#include <string>
 
 class AkinciBoundaryModel: public BoundaryModel
 {
@@ -11,36 +12,21 @@ class AkinciBoundaryModel: public BoundaryModel
         std::vector<Vector3r> v;
         std::vector<Real> volume;
 
-        Real mass;
-        Real radius;
-        
-        Real normalFct;
-        Real tangentialFct;
-
     public:
-
-        void init(std::vector<Vector3r> &);
 
         void computeVolume();
 
-        void setNormalFct(Real normalFct) { this -> normalFct = normalFct; }
-        void setTangentialFct(Real tangentialFct) { this -> tangentialFct = tangentialFct; }
-        void setRadius(Real radius) { this -> radius = radius; }
-        void setMass(Real mass) { this -> mass = mass; }
-
-        Real getNormalFct() { return normalFct; }
-        Real getTangentialFct() { return tangentialFct; }
-        Real getRadius() { return radius; }
-        Real getMass() { return mass; }
-
         Real & getVolume(const unsigned int i) { return volume[i]; }
 
-        void sampleCube();
-        void sampleSphere();
-        void sample();
+        void sampleCube(Vector3r min, Vector3r max, std::vector<Vector3r> &);
+        void sampleSphere(Vector3r origen, Real radius, std::vector<Vector3r> &);
+        void sampleGeometry(std::string path, Real maxDistance, Vector3r scale, Vector3r translate, Vector3r rotate, std::vector<Vector3r> &);
+
+        void addCube(Vector3r min, Vector3r max);
+        void addSphere(Vector3r origen, Real radius);
+        void addGeometry(std::string, Real particleRadius);
 
         void resizeBoundary(const unsigned int);
-        unsigned int size() { return r.size(); }
 };
 
 #endif  

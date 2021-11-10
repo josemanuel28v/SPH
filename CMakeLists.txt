@@ -2,10 +2,10 @@ PROJECT(SPH)
 CMAKE_MINIMUM_REQUIRED(VERSION 3.11) # Indicamos la versión mínima que necesitamos de CMake
 
 # Incluir directorios con codigo a compilar
-include_directories(${SPH_SOURCE_DIR}/Extern ${SPH_SOURCE_DIR}/src)
+include_directories(${SPH_SOURCE_DIR}/extern ${SPH_SOURCE_DIR}/src)
 
 # Establecer los flags para la compilacion
-SET(CMAKE_CXX_FLAGS "-O3 -mavx -ffast-math -std=c++14 -march=native -mtune=native -Wall -Wpedantic -fopenmp -lglut -lGL -lGLEW")
+SET(CMAKE_CXX_FLAGS "-O3 -mavx -ffast-math -std=c++17 -march=native -mtune=native -Wall -Wpedantic -fopenmp -lglut -lGL -lGLEW")
 
 # Todos los cpp para los que se generara un .o
 FILE(GLOB SPH_SRC "${SPH_SOURCE_DIR}/Extern/*.cpp"

@@ -21,6 +21,8 @@ class XSPHViscosity: public NonPressureForce
 
         XSPHViscosity(FluidModel *fm) :NonPressureForce(fm) {}
 
+        ~XSPHViscosity() {}
+
         void init(Real viscosity, Real boundaryViscosity)
         {
             this -> viscosity = viscosity;
@@ -67,6 +69,8 @@ class XSPHViscosity: public NonPressureForce
         }
 
         void resize(const unsigned int ) {}
+        Real getViscosity() { return viscosity; }
+        Real getBoundaryViscosity() { return boundaryViscosity; }
 };
 
 #endif 

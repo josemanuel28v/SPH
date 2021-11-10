@@ -37,7 +37,7 @@ double OGL::lastRender = 0;
 glm::vec3 OGL::cameraPos = glm::vec3(0.0f, 0.5f, 5.0f);
 glm::vec3 OGL::look = glm::vec3(0.0, 0.0, 0.0);
 
-OGL::LightInfo OGL::pointLight  = { glm::vec4(0.0, 1.0, 5.0, 1.0), 1.0f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(1.0f, 0.00f, 0.000f), };
+OGL::LightInfo OGL::pointLight  = { glm::vec4(0.0, -1.0, 5.0, 1.0), 1.0f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(1.0f, 0.00f, 0.000f), };
 OGL::Cache OGL::cache;
 OGL::MaterialInfo OGL::materials[] = {gold, perl, bronze, brass, emerald, tin};
 OGL::MaterialInfo OGL::currentMaterial = brass;
@@ -186,7 +186,7 @@ void OGL::displaySpriteScene(const glm::mat4 & Projection, const glm::mat4 & Vie
 		if (colorMode == 2 && cache.pressure[cache.frameCount].size() != 0)
 		{
 			parameter = &cache.pressure[cache.frameCount];
-			max_param = 3000;
+			max_param = 0.000005;//3000;
 		}
 		else
 		{
@@ -203,7 +203,7 @@ void OGL::displaySpriteScene(const glm::mat4 & Projection, const glm::mat4 & Vie
 		if (colorMode == 2)
 		{
 			parameter = &sim -> getDivergenceError(0);
-			max_param = 3000;
+			max_param = 0.000005;//3000;
 			//max_param = sim -> getFluidModel(0) -> getRefDensity();
 		}
 		else 
@@ -395,6 +395,15 @@ void OGL::keyboard(GLubyte key, GLint x, GLint y)
 		}
 			break;
 
+		case 'e': // pause emitters
+		{
+			static bool pause = false;
+			Simulation *sim = Simulation::getCurrent();
+			pause = !pause;
+			sim -> setEmittersPause(pause);
+		}
+			
+
 	}
 }
 
@@ -466,7 +475,7 @@ void OGL::idle()
 
 				//cacheParam3D.push_back(sim.getVelocities3D());
 				cache.velocity.push_back(sim -> getVelocities(0));
-				cache.pressure.push_back(sim -> getPressures(0));
+				cache.pressure.push_back(sim -> getDivergenceError(0));
 
 				cache.size ++;
 			}

@@ -16,15 +16,22 @@ class TimeManager
 {
     private:
 
+        struct Interval
+        {
+            Real start;
+            Real stop;
+        };
+
         Real fps;
         Real lastTimeSave;
 
+        unsigned int frame;
         Real time;
         Real startTime;
         Real endTime;
         Real ts;
 
-        std::unordered_map<std::string, Real> intervals;
+        std::unordered_map<std::string, Interval> intervals;
 
         Real minTimeStep;
         Real maxTimeStep;
@@ -35,45 +42,27 @@ class TimeManager
         {
             time = 0.0;
             ts = 0.0001;
+            frame = 1;
         }
 
+        void setFrame(unsigned int frame) { this -> frame = frame; }
         void setTime(Real time) { this -> time = time; }
         void setStartTime(Real startTime) { this -> startTime = startTime; }
         void setEndTime(Real endTime) { this -> endTime = endTime; }
         void setTimeStep(Real ts) { this -> ts = ts; }
-        void setFPS(Real fps) { this -> fps = fps; }
-        void setMinTimeStep(Real minTs) { minTimeStep = minTs; }
+        void setFPS(Real fps) { this -> fps = fps; } // Se debe llamar antes que setMinTimeStep()
+        void setMinTimeStep(Real minTs) { Real minFPSTimeStep = 1.0 / fps; minFPSTimeStep < minTs? minTimeStep = minFPSTimeStep : minTimeStep = minTs; }
         void setMaxTimeStep(Real maxTs) { maxTimeStep = maxTs; }
 
+        Real getFrame() { return frame; }
         Real getTime() { return time; }
         Real getStartTime() { return startTime; }
         Real getEndTime() { return endTime; }
         Real getTimeStep() { return ts; }
+        Real getFPS() { return fps; }
         Real getMinTimeStep() { return minTimeStep; }
         Real getMaxTimeStep() { return maxTimeStep; }
 
-        /*void printOutput()
-        {
-            struct Interval
-            {
-                Real start;
-                Real stop;
-            };
-
-            std::vector<std::string> index;
-            unsigned int max;
-
-            std::string label = "Time";
-            std::cout << label + std::string(max - label.length(), ' ') << " -> " << time << " s" << std::endl;
-            for (const std::string & i: index)
-            {
-                label = i + std::string(max - i.length(), ' ');
-                std::cout << label << " -> " << intervals[i].stop - intervals[i].start << " s" << std::endl;
-            }
-
-            index.clear();
-            max = 0;
-        }*/
 
         void startCounting(std::string name)
         {
@@ -85,7 +74,7 @@ class TimeManager
             start = clock() / (Real) CLOCKS_PER_SEC;
             #endif
 
-            intervals[name] = start; 
+            intervals[name].start = start; 
         }
 
         void stopCounting(std::string name)
@@ -98,14 +87,21 @@ class TimeManager
             stop = clock() / (Real) CLOCKS_PER_SEC;
             #endif
 
-            LOG(name, " -> ", stop - intervals[name], " s");
+            intervals[name].stop = stop; 
+
+            LOG(name, " -> ", stop - intervals[name].start, " s");
+        }
+
+        Real getInterval(std::string name)
+        {
+            return intervals[name].stop - intervals[name].start;
         }
 
         bool hasToSave()
         {
             if (time - lastTimeSave >= 1.0 / fps)
             {
-                lastTimeSave = time; // Cambiar esto si luego no coincide el frame final con el que deberia ser respecto al tiempo final
+                lastTimeSave = (Real) frame / fps;
                 
                 return true;
             }

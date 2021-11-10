@@ -7,8 +7,10 @@
 class BoundaryModel
 {
     protected:
-        // aqui deberia ir el rigid body que tiene los vertices, de momento sera un array de positiones
+        
         std::vector<Vector3r> r;
+
+        // Contendra los rigid body que podran ser estaticos animados o dinamicos
 
     public:
 
@@ -23,6 +25,8 @@ class BoundaryModel
 
         Vector3r & getPosition(const unsigned int i) { return r[i]; }
         std::vector<Vector3r>& getPosition() { return r; }
+
+        unsigned int size() { return r.size(); }
 };
 
 #endif

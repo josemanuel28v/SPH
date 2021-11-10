@@ -4,222 +4,257 @@
 #include <iostream>
 #include <algorithm>
 
-void SceneLoader::read()
+unsigned int SceneLoader::maxDigits = 4;
+
+bool SceneLoader::readConfiguration(SimulationInfo & simData, std::string path)
 {
-    std::cout << "Reading params..." << std::endl;
-    if (readParameters())
-        std::cout << "Done!" << std::endl << std::endl;
-    else
-        std::cerr << "Cannot open file " << path + ".prm" << std::endl << std::endl;
+    json config;
+    std::ifstream file(path);
 
-    std::cout << "Reading scene..." << std::endl;
-    if (readScene())
-        std::cout << "Done!" << std::endl << std::endl;
-    else
-        std::cerr << "Cannot open file " << path + ".scn" << std::endl << std::endl;
+    if (file.is_open())
+    {
+        file >> config;
 
-    std::cout << "Reading domain..." << std::endl;
-    if (readDomain())
-        std::cout << "Done!" << std::endl << std::endl;
-    else
-        std::cerr << "Cannot open file " << path + ".dom" << std::endl << std::endl;
+        LOG("Reading general configuration...");
+        readSceneInfo(simData, config);
 
-    std::cout << "Reading positions and velocities..." << std::endl;
-    if (readState(path))
-        std::cout << "Done!" << std::endl << std::endl;
-    else
-        std::cerr << "Cannot open file " << path + ".dat" << std::endl << std::endl;
-}
+        LOG("Reading fluid data...");
+        readFluidInfo(simData, config);        
 
-bool SceneLoader::readState(std::string path)
-{
-    std::ifstream in_file(path + ".dat");
-    unsigned n;
-    std::string tmp;
-    std::string x, y, z;
+        LOG("Reading boundary data...");
+        readBoundaryInfo(simData, config);
 
-    if (!in_file.is_open())
-        return false;
+        LOG("Read!");
+
+        return true;
+    }
     else
     {
-        std::stringstream buffer;
-        buffer << in_file.rdbuf();
-        in_file.close();
+        ERROR("Cannot read ", path);
+        return false;
+    }
+}
+
+void SceneLoader::readSceneInfo(SimulationInfo & simData, json config)
+{
+    SceneInfo & sceneData = simData.sceneData;
+
+    sceneData.startTime = config["Configuration"]["startTime"];
+    sceneData.endTime = config["Configuration"]["endTime"];
+    sceneData.timeStep = config["Configuration"]["timeStep"];
+    sceneData.fps = config["Configuration"]["fps"];
+    sceneData.minTimeStep = config["Configuration"]["minTimeStep"];
+    sceneData.maxTimeStep = config["Configuration"]["maxTimeStep"];
+    sceneData.cflFactor = config["Configuration"]["cflFactor"];
+    sceneData.particleRadius = config["Configuration"]["particleRadius"];
+    sceneData.boundaryMethod = config["Configuration"]["boundaryMethod"];
+    sceneData.simulationMethod = config["Configuration"]["simulationMethod"];
+    sceneData.gravity = Vector3r(config["Configuration"]["gravity"][0],
+                                    config["Configuration"]["gravity"][1],
+                                    config["Configuration"]["gravity"][2]);
+
+    if (sceneData.simulationMethod == Simulation::WCSPH_METHOD)
+    {
+        sceneData.stiffness = config["Configuration"]["stiffness"];
+        sceneData.gamma = config["Configuration"]["gamma"];
+    }
+    else if (sceneData.simulationMethod == Simulation::PCISPH_METHOD)
+        sceneData.eta = config["Configuration"]["eta"];
+    else if (sceneData.simulationMethod == Simulation::DFSPH_METHOD)
+    {
+        sceneData.eta = config["Configuration"]["eta"];
+        sceneData.etaV = config["Configuration"]["etaV"];
+    }
+}
+
+void SceneLoader::readFluidInfo(SimulationInfo & simData, json config)
+{
+    FluidInfo & fluidData = simData.fluidData;
+
+    unsigned int numFluidModels = config["Fluid"]["FluidModel"].size();
+    fluidData.fluids.resize(numFluidModels);
+    fluidData.viscosityMethod = config["Fluid"]["viscosityMethod"];
+    fluidData.surfaceTensionMethod = config["Fluid"]["surfaceTensionMethod"];
+    fluidData.adhesionMethod = config["Fluid"]["adhesionMethod"];
+
+    for (unsigned int i = 0; i < numFluidModels; ++i)
+    {
+        fluidData.fluids[i].density0 = config["Fluid"]["FluidModel"][i]["density0"];
+
+        if (fluidData.viscosityMethod > -1)
+        {
+            fluidData.fluids[i].viscosity = config["Fluid"]["FluidModel"][i]["viscosity"];
+            fluidData.fluids[i].boundaryViscosity = config["Fluid"]["FluidModel"][i]["boundaryViscosity"];
+        }
+
+        if (fluidData.surfaceTensionMethod > -1)
+            fluidData.fluids[i].surfaceTension = config["Fluid"]["FluidModel"][i]["surfaceTension"];
         
-        // Leer y guardar el ultimo paso de simulacion calculado para ese frame
-        buffer >> tmp;     //time = stod(tmp); // Time
-        buffer >> tmp;     // Num parts
+        if (fluidData.adhesionMethod > -1)
+            fluidData.fluids[i].adhesion = config["Fluid"]["FluidModel"][i]["adhesion"];
 
-        n = (unsigned) stoul(tmp);
+        unsigned int numFluidBlocks = config["Fluid"]["FluidModel"][i]["fluidBlocks"].size();
+        fluidData.fluids[i].fluidBlocks.resize(numFluidBlocks);
+        
+        unsigned int numEmitters = config["Fluid"]["FluidModel"][i]["emitters"].size();
+        fluidData.fluids[i].emitters.resize(numEmitters);
+        
+        // geometrias
 
-        fluidData.position.resize(n);
-        fluidData.velocity.resize(n);
-
-        unsigned i = 0;
-        while (buffer >> x)
+        for (unsigned int j = 0; j < numFluidBlocks; ++j)
         {
-            buffer >> y;
-            buffer >> z;
+            fluidData.fluids[i].fluidBlocks[j].min = Vector3r(config["Fluid"]["FluidModel"][i]["fluidBlocks"][j]["min"][0],
+                                                                config["Fluid"]["FluidModel"][i]["fluidBlocks"][j]["min"][1],
+                                                                config["Fluid"]["FluidModel"][i]["fluidBlocks"][j]["min"][2]);
 
-            if (i < n)
-            {
-                fluidData.position[i].x = (Real) stod(x);
-                fluidData.position[i].y = (Real) stod(y);
-                fluidData.position[i].z = (Real) stod(z);
-            }
-            else
-            {
-                fluidData.velocity[i - n].x = (Real) stod(x);
-                fluidData.velocity[i - n].y = (Real) stod(y);
-                fluidData.velocity[i - n].z = (Real) stod(z);
-            }
-
-            i++;
+            fluidData.fluids[i].fluidBlocks[j].max = Vector3r(config["Fluid"]["FluidModel"][i]["fluidBlocks"][j]["max"][0],
+                                                                config["Fluid"]["FluidModel"][i]["fluidBlocks"][j]["max"][1],
+                                                                config["Fluid"]["FluidModel"][i]["fluidBlocks"][j]["max"][2]);
         }
 
-        return true;
+        for (unsigned int j = 0; j < numEmitters; ++j)
+        {
+            EmitterInfo & emitter = fluidData.fluids[i].emitters[j];
+
+            auto & position = config["Fluid"]["FluidModel"][i]["emitters"][j]["position"];
+            auto & rotation = config["Fluid"]["FluidModel"][i]["emitters"][j]["rotation"];
+
+            emitter.r = Vector3r(position[0], position[1], position[2]);
+            emitter.rot = Quat4r(rotation[0], rotation[1], rotation[2], rotation[3]);
+            emitter.v = config["Fluid"]["FluidModel"][i]["emitters"][j]["velocity"];
+            emitter.numParticles = config["Fluid"]["FluidModel"][i]["emitters"][j]["numParticles"];
+            emitter.startTime = config["Fluid"]["FluidModel"][i]["emitters"][j]["startTime"];
+            emitter.type = config["Fluid"]["FluidModel"][i]["emitters"][j]["type"];
+            emitter.width = config["Fluid"]["FluidModel"][i]["emitters"][j]["width"];
+            emitter.height = config["Fluid"]["FluidModel"][i]["emitters"][j]["height"];
+            emitter.spacing = config["Fluid"]["FluidModel"][i]["emitters"][j]["spacing"];
+        }
     }
 }
 
-bool SceneLoader::readScene()
+void SceneLoader::readBoundaryInfo(SimulationInfo & simData, json config)
 {
-    std::ifstream in_file(path + ".scn");
-    std::string line;
+    BoundaryInfo & boundaryData = simData.boundaryData;
+    SceneInfo & sceneData = simData.sceneData;
 
-    if (!in_file.is_open())
+    unsigned int numBoundaries = config["Boundary"].size();
+    boundaryData.boundaries.resize(numBoundaries);
+
+    for (unsigned int i = 0; i < numBoundaries; ++i)
     {
-        return false;  
-    }
-    else
-    {
-        while (getline(in_file, line))
+        unsigned int numBox = config["Boundary"][i]["box"].size();
+        unsigned int numSphere = config["Boundary"][i]["sphere"].size();
+        unsigned int numGeometry = config["Boundary"][i]["geometry"].size();
+
+        boundaryData.boundaries[i].box.resize(numBox);
+        boundaryData.boundaries[i].sphere.resize(numSphere);
+        boundaryData.boundaries[i].geometry.resize(numGeometry);
+
+        if (sceneData.boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD) 
         {
-            size_t i = line.find("=") + 1;
-            std::string param = line.substr(i, line.size());
-
-            /*if (line.find("nparts") != line.npos)
-                sys.resize(stoul(param));*/
-            if (line.find("particle_volume") != line.npos)
-                sceneData.particleVolume = static_cast<Real>(stod(param));
-            /*else if (line.find("fluid_volume") != line.npos)
-                sys.fluid_volume = stod(param);
-            else if (line.find("kernel_parts") != line.npos)
-                sys.kernel_parts = stoul(param);*/
-            else if (line.find("tini") != line.npos)
-                sceneData.startTime = stod(param);
-            else if (line.find("tfin") != line.npos)
-                sceneData.endTime = stod(param);
-            else if (line.find("tstep") != line.npos)
-                sceneData.timeStep = stod(param);
-            else if (line.find("save_freq") != line.npos)
-                sceneData.fps = stoul(param);
-            else
-                std::cout << "Cannot read line: " << line << std::endl;
+            boundaryData.boundaries[i].normalFct = config["Boundary"][i]["normalFct"];
+            boundaryData.boundaries[i].tangFct = config["Boundary"][i]["tangFct"];
         }
 
-        in_file.close();
+        // Cubes
+        for (unsigned int j = 0; j < numBox; ++j)
+        {
+            if (sceneData.boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD) 
+                boundaryData.boundaries[i].box[j].second = config["Boundary"][i]["box"][j]["inverted"];
 
-        return true;
+            boundaryData.boundaries[i].box[j].first.min = Vector3r(config["Boundary"][i]["box"][j]["min"][0],
+                                                                config["Boundary"][i]["box"][j]["min"][1],
+                                                                config["Boundary"][i]["box"][j]["min"][2]);
+
+            boundaryData.boundaries[i].box[j].first.max = Vector3r(config["Boundary"][i]["box"][j]["max"][0],
+                                                                config["Boundary"][i]["box"][j]["max"][1],
+                                                                config["Boundary"][i]["box"][j]["max"][2]);
+        }
+
+        // Spheres
+        for (unsigned int j = 0; j < numSphere; ++j)
+        {
+            if (sceneData.boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD) 
+                boundaryData.boundaries[i].sphere[j].second = config["Boundary"][i]["sphere"][j]["inverted"];
+
+            boundaryData.boundaries[i].sphere[j].first.pos = Vector3r(config["Boundary"][i]["sphere"][j]["pos"][0],
+                                                                config["Boundary"][i]["sphere"][j]["pos"][1],
+                                                                config["Boundary"][i]["sphere"][j]["pos"][2]);
+
+            boundaryData.boundaries[i].sphere[j].first.radius = config["Boundary"][i]["sphere"][j]["radius"];                                           
+        }
+
+        // Geometries
+        for (unsigned int j = 0; j < numGeometry; ++j)
+        {
+            boundaryData.boundaries[i].geometry[j].path = config["Boundary"][i]["geometry"][j]["path"];
+            boundaryData.boundaries[i].geometry[j].spacing = config["Boundary"][i]["geometry"][j]["spacing"];
+        }
     }
 }
 
-bool SceneLoader::readDomain()
+void SceneLoader::writeFluid()
 {
-    std::ifstream in_file(path + ".dom");
-    std::string word;
-    std::vector<std::string> dom_pts;
+    Simulation *sim = Simulation::getCurrent();
+    std::string filename = sim -> getName();
+    unsigned int frame = sim -> getFrame();
 
-    domain.resize(2);
+    std::string jsonext = ".json";
+    std::string num = std::to_string(frame);
     
-    if (!in_file.is_open())
-        return false;
-    else
+    unsigned int iters = maxDigits - num.length();
+    for (unsigned int i = 0; i < iters; ++i)
+        num = "0" + num;
+
+    filename.insert(filename.length() - jsonext.length(), "_" + num);
+
+    json state;
+    std::ofstream file(filename);
+
+    if (file.is_open())
     {
-        while (in_file >> word)
-            dom_pts.push_back(word);
-
-        in_file.close();
-
-        domain[0].x = (Real) stod(dom_pts[0]);
-        domain[1].x = (Real) stod(dom_pts[1]);
-        domain[0].y = (Real) stod(dom_pts[2]);
-        domain[1].y = (Real) stod(dom_pts[3]);
-        domain[0].z = (Real) stod(dom_pts[4]);
-        domain[1].z = (Real) stod(dom_pts[5]);
-
-        return true;
-    }
-} 
-
-bool SceneLoader::readParameters()
-{
-    std::ifstream in_file(path + ".prm");
-    std::string line;
-
-    if (!in_file.is_open())
-        return false; 
-    else
-    {
-        while (getline(in_file, line))
+        unsigned int numFluids = sim -> numberFluidModels();
+        unsigned int totalParticles = 0;
+        unsigned int totalActiveParticles = 0;
+        for (unsigned fmi = 0; fmi < numFluids; ++fmi)
         {
-            size_t i = line.find("=") + 1;
-            std::string param = line.substr(i, line.size()); // probar a quitar line.size de la llamada
-
-            if (line.find("density") != line.npos)
-                fluidData.density0 = stod(param);
-            else if (line.find("visco") != line.npos)
-                fluidData.viscosity = stod(param);
-            /*else if (line.find("stiff") != line.npos)
-                sys.stiffness = stod(param);*/
-            else if (line.find("wsph_b") != line.npos)
-                fluidData.stiffness = stod(param);
-            else if (line.find("wsph_g") != line.npos)
-                fluidData.gamma = stod(param);
-            /*else if (line.find("wsph") != line.npos)
-            {
-                if (param == "True" || param == "true")
-                    sys.model = SPHSystem::WCSPH;
-            }*/
-            else if (line.find("pcisph_fluct") != line.npos)
-                fluidData.eta = stod(param);
-            /*else if (line.find("pcisph") != line.npos)
-            {
-                if (param == "True" || param == "true")
-                    sys.model = SPHSystem::PCISPH;
-            }*/
-            else if (line.find("surften_threshold") != line.npos)
-                stod(param);
-            else if (line.find("surften") != line.npos)
-            {
-                fluidData.surften = stod(param);
-            }
-            /*else if (line.find("collision_restitution") != line.npos)
-                sys.restitution = stod(param);
-            else if (line.find("collision_tang_conservation") != line.npos)
-                sys.tang_conservation = stod(param);*/
-            else if (line.find("gravity") != line.npos)
-            {
-                param.erase(remove(param.begin(), param.end(), ' '), param.end()); // Eliminar los espacios
-
-                std::string x = param.substr(1, param.find_first_of(",") - 1);
-                param = param.substr(param.find_first_of(",") + 1);
-
-                std::string y = param.substr(0, param.find_first_of(","));
-                param = param.substr(param.find_first_of(",") + 1);
-
-                param.erase(param.end() - 1, param.end());
-                std::string z = param;
-
-                fluidData.gravity.x = (Real) stod(x);
-                fluidData.gravity.y = (Real) stod(y);
-                fluidData.gravity.z = (Real) stod(z);
-            }
-            else
-                std::cout << "Cannot read line: " << line << std::endl;
+            totalParticles += sim -> getFluidModel(fmi) -> getNumParticles();
+            totalActiveParticles += sim -> getFluidModel(fmi) -> getNumActiveParticles();
         }
 
-        in_file.close();
+        state["numParticles"] = totalParticles;
+        state["numActiveParticles"] = totalActiveParticles;
+        state["time"] = sim -> getTime();
+        state["timeStep"] = sim -> getTimeStep();
 
-        return true;
+        unsigned int pid = 0;
+        for (unsigned fmi = 0; fmi < numFluids; ++fmi)
+        {
+            FluidModel *fm = sim -> getFluidModel(fmi);
+            unsigned int numParticles = fm -> getNumParticles();
+
+            for (unsigned int i = 0; i < numParticles; ++i)
+            {
+                const Vector3r & pos = fm -> getPosition(i);
+                state["positions"][pid][0] = pos.x;
+                state["positions"][pid][1] = pos.y;
+                state["positions"][pid][2] = pos.z;
+
+                const Vector3r & vel = fm -> getVelocity(i);
+                state["velocities"][pid][0] = vel.x;
+                state["velocities"][pid][1] = vel.y;
+                state["velocities"][pid][2] = vel.z;
+
+                ++pid;
+            }
+        }
+
+        file << state;
+
+        file.close();
+    }
+    else
+    {
+        LOG("Cannot write fluid state");
     }
 }

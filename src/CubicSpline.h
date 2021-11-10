@@ -7,41 +7,39 @@ class CubicSpline
 {
     protected:
 
-        static Real m_radius;
-        static Real m_k;
-        static Real m_l;
+        static Real supportRadius;
+        static Real k;
+        static Real l;
 
     public:
 
-        static Real getSupportRadius() { return m_radius; }
+        static Real getSupportRadius() { return supportRadius; }
 
         static void setSupportRadius(Real val)
         {
-            m_radius = val;
+            supportRadius = val;
             const Real pi = static_cast<Real>(M_PI);
 
-            const Real h3 = m_radius*m_radius*m_radius;
-            m_k = static_cast<Real>(8.0) / (pi*h3);
-            m_l = static_cast<Real>(48.0) / (pi*h3);
+            const Real h3 = supportRadius*supportRadius*supportRadius;
+            k = static_cast<Real>(8.0) / (pi*h3);
+            l = static_cast<Real>(48.0) / (pi*h3);
         }
 
         static Real W(const Real r)
         {
             Real res = 0.0;
-            const Real q = r / m_radius;
+            const Real q = r / supportRadius;
             if (q <= 1.0)
             {
                 if (q <= 0.5)
                 {
                     const Real q2 = q*q;
                     const Real q3 = q2*q;
-                    res = m_k * (static_cast<Real>(6.0)*q3 - static_cast<Real>(6.0)*q2 + static_cast<Real>(1.0));
-                    // 8/(pi*h^3) * 6*x^3 - 6*x^2 + 1
+                    res = k * (static_cast<Real>(6.0)*q3 - static_cast<Real>(6.0)*q2 + static_cast<Real>(1.0));
                 }
                 else
                 {
-                    res = m_k * (static_cast<Real>(2.0)*pow(static_cast<Real>(1.0) - q, static_cast<Real>(3.0)));
-                    // 8/(pi*h^3) * 2*(1 - x) ^ 3
+                    res = k * (static_cast<Real>(2.0)*pow(static_cast<Real>(1.0) - q, static_cast<Real>(3.0)));
                 }
             }
             return res;
@@ -56,18 +54,18 @@ class CubicSpline
         {
             Vector3r res = Vector3r(0.0, 0.0, 0.0);
             const Real rl = length(r);
-            const Real q = rl / m_radius;
+            const Real q = rl / supportRadius;
             if ((rl > 1.0e-5) && (q <= 1.0))
             {
-                const Vector3r gradq = r * (static_cast<Real>(1.0) / (rl*m_radius));
+                const Vector3r gradq = r * (static_cast<Real>(1.0) / (rl*supportRadius));
                 if (q <= 0.5)
                 {
-                    res = m_l*q*((Real) 3.0*q - static_cast<Real>(2.0))*gradq;
+                    res = l*q*((Real) 3.0*q - static_cast<Real>(2.0))*gradq;
                 }
                 else
                 {
                     const Real factor = static_cast<Real>(1.0) - q;
-                    res = m_l*(-factor*factor)*gradq;
+                    res = l*(-factor*factor)*gradq;
                 }
             }
 

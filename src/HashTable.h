@@ -42,21 +42,18 @@ class HashTable
             unsigned int pointSetId;
         };
 
-        struct Bucket                                   ///< Estructura que contiene las particulas y los vecinos de cada celda. Es el value de la pareja {key, value}
+        struct Bucket                                   // Estructura que contiene las particulas y los vecinos de cada celda. Es el value de la pareja {key, value}
         {                                               
             vector<pointInfo> points;                     
             vector<pointInfo> neighbors;                    
             vector<pointInfo> boundary_points;            
             vector<pointInfo> boundary_neighbors;           
-        };   
-        /*
-        En lugar de que el struct Bucket sea el tipo de dato del valor, que sea un unsigned que indique el indice de celda??  y tener las celdas en un vector aparte
-        */                                           
+        };                                  
                                                         
-        unordered_map<Vector3i, Bucket, Hash> table;       ///< Tabla hash que utiliza como clave una celda y como valor el bucket (que contiene las particulas y los vecinos de esa celda) 
+        unordered_map<Vector3i, Bucket, Hash> table;       // Tabla hash que utiliza como clave una celda y como valor el bucket (que contiene las particulas y los vecinos de esa celda) 
         vector<Vector3i> keys;
 
-        Real h;                                       ///< Distancia de suavizado (Smoothing length)
+        Real h;                                       // SupportRadius
 
         HashTable() {}
 
@@ -138,7 +135,7 @@ class HashTable
         #else
         void neighborhoodSearch()
         {
-            // Asi mejora respecto a arriba pero oes necesario utilizar como tabla hash un array donde cada elemento sea la celda en la que esta cada particula
+            // Asi mejora respecto a arriba pero es necesario utilizar como tabla hash un array donde cada elemento sea la celda en la que esta cada particula
             vector<Vector3i> keys;
             for (auto& cell: table)
                 keys.push_back(cell.first);
@@ -161,7 +158,8 @@ class HashTable
                                                           neigh_cell -> second.points.begin(), 
                                                           neigh_cell -> second.points.end()); 
 
-                                // Si las partículas son estáticas siempre van a ser vecinas de los mismos vóxeles por lo que esto se podría hacer solo una vez
+                                // No se puede hacer una vez al principio aunque sean estaticas porque al principio solo se buscaran
+                                // vecinos para las celdas en las que haya boundary particles ya que aun no hay particulas de fluido
                                 cell.boundary_neighbors.insert(cell.boundary_neighbors.end(),       // De esta manera se consigue tener las boundary particles que son vecinas de una celda en un vector distinto de neighbors
                                                           neigh_cell -> second.boundary_points.begin(), 
                                                           neigh_cell -> second.boundary_points.end()); 
@@ -192,7 +190,9 @@ class HashTable
         void clearB()
         {
             for (auto& cell: table)
+            {
                 cell.second.boundary_points.clear();
+            }
         }
 
         /**

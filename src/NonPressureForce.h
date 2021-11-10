@@ -12,6 +12,7 @@ class NonPressureForce
     public:
 
         NonPressureForce(FluidModel *fm) { this -> fm = fm; }
+        virtual ~NonPressureForce() {};
 
         virtual void step() = 0; 
         virtual void resize(const unsigned int) = 0;

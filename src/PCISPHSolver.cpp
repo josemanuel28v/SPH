@@ -75,6 +75,8 @@ void PCISPHSolver::step()
         sim -> stopCounting("Boundary handling");
     }
 
+    sim -> emitParticles();
+
     sim -> setTime(sim -> getTime() + sim -> getTimeStep());
 }
 

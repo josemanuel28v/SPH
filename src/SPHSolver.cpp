@@ -6,6 +6,7 @@
 #include "HashTable.h"
 #include "Poly6.h"
 #include "CubicSpline.h"
+#include "Spiky.h"
 #include <iostream>
 
 SPHSolver::SPHSolver()
@@ -27,13 +28,11 @@ void SPHSolver::init()
     if (sim -> getBoundaryHandlingMethod() == Simulation::AKINCI_BOUNDARY_METHOD)
     {
         neighborhoodSearch();
-
         unsigned int nBoundaries = sim -> numberBoundaryModels();
 
         for (unsigned int bmIndex = 0; bmIndex< nBoundaries; ++bmIndex)
         {
             AkinciBoundaryModel *abm = static_cast<AkinciBoundaryModel*>(sim -> getBoundaryModel(bmIndex));
-
             abm -> computeVolume();
         }
     }
@@ -42,7 +41,6 @@ void SPHSolver::init()
 SPHSolver::~SPHSolver()
 {}
 
-// Tener en cuenta que se estan calculando con el CubicSpline Kernel en lugar del Poly6
 void SPHSolver::computeFluidDensities(const unsigned int fmIndex)
 {
     Simulation *sim = Simulation::getCurrent();
@@ -63,14 +61,14 @@ void SPHSolver::computeFluidDensities(const unsigned int fmIndex)
         Vector3i cellId = floor(ri / sim -> getSupportRadius());
         density = 0;
 
-        // contribución de las partículas de fluido vecinas
+        // Contribucion de las partículas de fluido vecinas
         forall_fluid_neighbors_in_same_phase
         (
             Vector3r & rj = fm -> getPosition(j);
             density += fm -> getMass(j) * CubicSpline::W(ri - rj);
         );
 
-        // contribución de todos los boundary models
+        // Contribucion de todos los boundary models
         if (boundaryMethod == Simulation::PCISPH_BOUNDARY_METHOD)
         {
             forall_boundary_neighbors
@@ -89,19 +87,6 @@ void SPHSolver::computeFluidDensities(const unsigned int fmIndex)
                 density += density0 * nbm -> getVolume(b) * CubicSpline::W(ri - rb);
             );
         }
-
-        // así deberia tomarse la contribución de otros fluidModels asumiendo que eso significa multifase
-        /*forall_fluid_neighbors
-        (
-            Vector3r & rj = nfm -> getPosition(j);
-            density += nfm -> getMass(j) * CubicSpline::W(ri - rj);
-        );*/
-
-        /*if (density > fm -> getRefDensity())
-        {
-            std::cout << "Density " << density << std::endl;
-            getchar();
-        }*/
     }
 }
 
@@ -159,6 +144,7 @@ void SPHSolver::integrate()
     unsigned int nFluidModels = sim -> numberFluidModels();
     Real ts = sim -> getTimeStep();
 
+    maxVel = 0.0;
     for (unsigned int fmIndex = 0; fmIndex < nFluidModels; ++fmIndex)
     {
         FluidModel *fm = sim -> getFluidModel(fmIndex);
@@ -211,7 +197,6 @@ void SPHSolver::insertBoundaryParticles()
     Simulation *sim = Simulation::getCurrent();
     HashTable *grid = sim -> getGrid();
     unsigned int numBoundaryModels = sim -> numberBoundaryModels();
-    PCISPHBoundaryModel *bm;
 
     // Vaciar el grid antes de insertar las particulas
     grid -> clearB();
@@ -219,7 +204,7 @@ void SPHSolver::insertBoundaryParticles()
     // Insertar las particulas de fluido en el grid
     for (unsigned int bmIndex = 0; bmIndex < numBoundaryModels; ++bmIndex)
     {
-        bm = static_cast<PCISPHBoundaryModel*>(sim->getBoundaryModel(bmIndex)); // Solo se esta haciendo con el PCISPHModel wtf?
+        BoundaryModel *bm = sim->getBoundaryModel(bmIndex); 
         unsigned int numParticles = bm -> size();
 
         for (unsigned int i = 0; i < numParticles; ++i)

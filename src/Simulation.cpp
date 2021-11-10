@@ -8,13 +8,13 @@
 #include "Cohesion.h"
 #include "Adhesion.h"
 #include "CubicSpline.h"
-#include <iostream>
 #include "Logger.h"
+#include "SceneLoader.h"
+#include <filesystem>
 
-#include "../Extern/OBJLoader.h"
-#include "../Extern/RegularTriangleSampling.h"
 #include "AkinciBoundaryModel.h"
-#include <glm/gtc/matrix_transform.hpp>
+#include "PCISPHBoundaryModel.h"
+#include "CubeBoundaryModel.h"
 
 Simulation* Simulation::current = nullptr;
 
@@ -44,7 +44,10 @@ const int Simulation::SPLINE_LAPLACIAN_METHOD = 0;
 
 Simulation::Simulation()
 {
-    // inicializar  parametros por defecto
+    // Inicializar  parametros por defecto
+    activeSave = false;
+    name = "";
+
     current_method = -1;
     current_bh_method = CUBE_BOUNDARY_METHOD;
     current_visco_method = -1;
@@ -61,7 +64,7 @@ Simulation::Simulation()
 
 Simulation::~Simulation()
 {
-    //eliminar punteros
+    // Eliminar punteros
     delete solver;
     delete grid;
 
@@ -75,7 +78,6 @@ Simulation::~Simulation()
         delete boundaryModels[i];
     boundaryModels.clear();
 
-    //current = nullptr; // delete current?
     delete current;
 }
 
@@ -101,6 +103,7 @@ void Simulation::init()
 {
     initKernels();
     initGrid();
+    initMasses();
     solver -> init();
 
     printInfo();
@@ -128,24 +131,54 @@ void Simulation::initKernels()
     CubicSpline::setSupportRadius(supportRadius);
 }
 
+void Simulation::initMasses()
+{
+    Real diameter = 2.0 * getParticleRadius();
+    Real particleVolume = pow(diameter, 3.0);
+
+    for (unsigned int i = 0; i < numberFluidModels(); ++i)
+    {
+        FluidModel *fm = getFluidModel(i);
+        Real density0 = fm -> getRefDensity();
+
+        fm -> setMasses(density0 * particleVolume);
+    }
+}
+
 bool Simulation::step()
 {
     Real time = getTime();
+    static Real compTime = 0;
+    bool save = false;
 
     if (time >= getStartTime() && time <= getEndTime())
     {
         LOG("--TIME-------------- ", time, " s ------------------------------");
+        LOG("  FRAME -> ", tm.getFrame());
         startCounting("Step computation ");
         solver -> step();
         stopCounting("Step computation ");
+
+        compTime += getInterval("Step computation ");
  
         LOG("Avg time step     -> ", time / (solver -> getSteps() - 1), " s");
+        LOG("Avg step comp     -> ", compTime / (solver -> getSteps() - 1), " s");
 
         LOG("----------------------------------------------------------------");
         LOG();
+
+        save = tm.hasToSave();
+
+        if (save)
+        {
+            if (activeSave)
+                SceneLoader::writeFluid();
+
+            tm.setFrame(tm.getFrame() + 1);
+        }
     }
 
-    return tm.hasToSave();
+    return save;
 }
 
 void Simulation::run()
@@ -161,7 +194,8 @@ void Simulation::setParticleRadius(Real particleRadius)
     this -> particleRadius = particleRadius;
 
     // Actualizar valor de la distancia de suavizado
-    setSupportRadius(4.0 * particleRadius);
+    this -> supportRadius = 4.0 * particleRadius /** pow(kernelParticles, 1./3.)*/;
+    grid -> setSmoothingLength(this -> supportRadius);
 }
 
 void Simulation::setSupportRadius(Real supportRadius)
@@ -263,6 +297,14 @@ FluidModel* Simulation::addFluidModel(std::vector<Vector3r>& fluidPoints, std::v
     return fm;
 }
 
+FluidModel* Simulation::addFluidModel()
+{
+    FluidModel *fm = new FluidModel();
+    fluidModels.push_back(fm);
+
+    return fm;
+}
+
 void Simulation::addBoundaryModel(BoundaryModel *bm)
 {
     boundaryModels.push_back(bm);
@@ -272,28 +314,177 @@ void Simulation::computeNonPressureForces()
 {
     unsigned int nFluidModels = numberFluidModels();
 
-    // compute nonpressure forces
     for (unsigned int i = 0; i < nFluidModels; ++i)
     {
         FluidModel *fm = getFluidModel(i);
-        unsigned int nNonPressureForces = fm -> numberNonPressureForces();
-
-        for (unsigned int j = 0; j < nNonPressureForces; ++j)
-        {
-            NonPressureForce *force = fm -> getNonPressureForce(j);
-            
-            startCounting("npForce " + std::to_string(j) + "        ");
-            force -> step();  
-            stopCounting("npForce " + std::to_string(j) + "        ");
-        }
-    }
-            
+        for (unsigned int i = 0; i < fm -> numberNonPressureForces(); ++i)
+            fm -> getNonPressureForce(i) -> step();
+    }   
 }
 
 void Simulation::emitParticles()
 {
     for (unsigned int i = 0; i < numberFluidModels(); ++i)
         fluidModels[i] -> emitParticles();
+}
+
+bool Simulation::importScene(std::string path)
+{
+    LOG("Importing scene from ", path, "...");
+    name = path;
+
+    SimulationInfo simData;
+
+    if (!SceneLoader::readConfiguration(simData, path))
+        return false;
+
+    const SceneInfo & sceneData = simData.sceneData;
+    const FluidInfo & fluidData = simData.fluidData;
+    const BoundaryInfo & boundaryData = simData.boundaryData;
+
+    // Scene info
+    setTimeStep(sceneData.timeStep); 
+    setFPS(sceneData.fps);
+    setMinTimeStep(sceneData.minTimeStep); 
+    setMaxTimeStep(sceneData.maxTimeStep);  
+    setStartTime(sceneData.startTime);
+    setEndTime(sceneData.endTime); 
+    setSimulationMethod(sceneData.simulationMethod);
+    setBoundaryMethod(sceneData.boundaryMethod);
+    setGravity(sceneData.gravity);
+    setParticleRadius(sceneData.particleRadius);
+
+    if (sceneData.simulationMethod == WCSPH_METHOD)
+    {
+        WCSPHSolver *wcsph = static_cast<WCSPHSolver*>(getSolver());
+        wcsph -> setStiffness(sceneData.stiffness);
+        wcsph -> setGamma(sceneData.gamma);
+    }
+    else if (sceneData.simulationMethod == PCISPH_METHOD)
+    {
+        PCISPHSolver *pcisph = static_cast<PCISPHSolver*>(getSolver());
+        pcisph -> setMaxError(sceneData.eta);
+    }
+    else if (sceneData.simulationMethod == DFSPH_METHOD)
+    {
+        DFSPHSolver *dfsph = static_cast<DFSPHSolver*>(getSolver());
+        dfsph -> setMaxError(sceneData.eta);
+        dfsph -> setMaxErrorV(sceneData.etaV);
+        dfsph -> setCFLFactor(sceneData.cflFactor);
+    }
+
+    // Fluid info
+    unsigned int numFluids = fluidData.fluids.size();
+    const std::vector<Fluid> & fluids = fluidData.fluids; // vector de fluidModels
+
+    setViscosityMethod(fluidData.viscosityMethod);
+    setSurfaceTensionMethod(fluidData.surfaceTensionMethod);
+    setAdhesionMethod(fluidData.adhesionMethod);
+
+    for (unsigned int i = 0; i < numFluids; ++i)
+    {
+        FluidModel *fm = nullptr;
+        
+        unsigned int numBlocks = fluids[i].fluidBlocks.size();
+        unsigned int numEmitters = fluids[i].emitters.size();
+        //unsigned int numGeometries = fluids[i].geometries.size();
+        
+        if (numBlocks > 0)
+            fm = buildFluidBlock(fluids[i].fluidBlocks);
+
+        // geomettry
+
+        // emitters
+        if (!fm) // si no hay fm porque no hay fluidBlocks se crea uno con posiciones y velocidades vacias
+            fm = addFluidModel();
+
+        for (unsigned int j = 0; j < numEmitters; ++j)
+        {
+            fm -> addEmitter(fluids[i].emitters[j].type,
+                             fluids[i].emitters[j].numParticles,
+                             fluids[i].emitters[j].r,
+                             fluids[i].emitters[j].v,
+                             fluids[i].emitters[j].rot,
+                             fluids[i].emitters[j].startTime,
+                             fluids[i].emitters[j].width,
+                             fluids[i].emitters[j].height,
+                             fluids[i].emitters[j].spacing);
+
+        }
+
+        fm -> setRefDensity(fluids[i].density0);
+
+        if (fluidData.viscosityMethod > -1 && fluids[i].viscosity != 0.0)
+            fm -> setViscosityForce(fluids[i].viscosity, fluids[i].boundaryViscosity);
+
+        if (fluidData.surfaceTensionMethod > -1 && fluids[i].surfaceTension != 0.0)
+            fm -> setSurfaceTensionForce(fluids[i].surfaceTension);
+
+        if (fluidData.adhesionMethod > -1 && fluids[i].adhesion != 0.0)
+            fm -> setAdhesionForce(fluids[i].adhesion);
+    }
+
+    // Boundary info
+    unsigned int numBoundaries = boundaryData.boundaries.size();
+    const std::vector<Boundary> & boundaries = boundaryData.boundaries;
+
+    if (sceneData.boundaryMethod == AKINCI_BOUNDARY_METHOD)
+    {
+        for (unsigned int i = 0; i < numBoundaries; ++i)
+        {
+            AkinciBoundaryModel *bm = new AkinciBoundaryModel();
+
+            unsigned int numBox = boundaries[i].box.size();
+            unsigned int numSphere = boundaries[i].sphere.size();
+            unsigned int numGeometry = boundaries[i].geometry.size();
+
+            for (unsigned int j = 0; j < numBox; ++j)
+                bm -> addCube(boundaries[i].box[j].first.min, boundaries[i].box[j].first.max);
+
+            for (unsigned int j = 0; j < numSphere; ++j)
+                bm -> addSphere(boundaries[i].sphere[j].first.pos, boundaries[i].sphere[j].first.radius);
+
+            for (unsigned int j = 0; j < numGeometry; ++j)
+                bm -> addGeometry(boundaries[i].geometry[j].path, boundaries[i].geometry[j].spacing * sceneData.particleRadius * 2.0);
+            
+            addBoundaryModel(bm);
+        }
+    }
+    else if (sceneData.boundaryMethod == PCISPH_BOUNDARY_METHOD)
+    {
+        if (numberFluidModels() == 1)
+        {
+            for (unsigned int i = 0; i < numBoundaries; ++i)
+            {
+                PCISPHBoundaryModel *bm = new PCISPHBoundaryModel();
+                Real density0 = getFluidModel(0) -> getRefDensity(); 
+                Real particleVolume = pow(2.0 * getParticleRadius(), 3.0);
+                bm -> setMass(density0 * particleVolume);
+                bm -> setRefDensity(density0);
+                bm -> setNormalFct(boundaries[i].normalFct);
+                bm -> setTangentialFct(boundaries[i].tangFct);
+
+                unsigned int numBox = boundaries[i].box.size();
+                unsigned int numSphere = boundaries[i].sphere.size();
+
+                for (unsigned int j = 0; j < numBox; ++j)
+                    bm -> addCube(boundaries[i].box[j].first.min, boundaries[i].box[j].first.max, boundaries[i].box[j].second);
+
+                for (unsigned int j = 0; j < numSphere; ++j)
+                    bm -> addSphere(boundaries[i].sphere[j].first.pos, boundaries[i].sphere[j].first.radius, boundaries[i].sphere[j].second);
+
+                addBoundaryModel(bm);
+            }
+        }
+        else
+            LOG("PCISPH BOUNDARY METHOD is not compatible with multiphase");
+    }
+
+    LOG("Scene imported!");
+
+    init();
+
+    return true;
 }
 
 std::vector<Real> & Simulation::getDivergenceError(const unsigned int fmIndex)
@@ -312,103 +503,28 @@ std::vector<Real> & Simulation::getDivergenceError(const unsigned int fmIndex)
     }
 }
 
-/** 
- * Esta funcion utiliza el sampling de la biblioteca SPlisHSPlasH
- * cuando se implemente un metodo de sampleo de superficie se sustituira por el propio
- */
-void Simulation::addBoundaryModelFromOBJ(std::string path, Real maxDistance, Vector3r scale, Vector3r translate, Vector3r rotate)
+FluidModel* Simulation::buildFluidBlock(const std::vector<BlockInfo> & fluidBlocks)
 {
-    if (current_bh_method != AKINCI_BOUNDARY_METHOD)
-    {
-        LOG("Boundary method must be AKINCI_BOUNDARY_METHOD ");
-        return; 
-    }
-
-    // Regular triangle sampling
-	Utilities::OBJLoader::Vec3f scale_ = {scale.x, scale.y, scale.z};
-	std::vector<Utilities::OBJLoader::Vec3f> x;
-	std::vector<Utilities::MeshFaceIndices> f;
-	std::vector<Utilities::OBJLoader::Vec3f> n;
-	std::vector<Utilities::OBJLoader::Vec2f> tc;
-
-	Utilities::OBJLoader::loadObj(path, &x, &f, &n, &tc, scale_);
-
-	// Cambio de los tipos de loader (Vec3f) a los tipos del sampler (Vector3r de eigen)
-	std::vector<SPH::Vector3r> x_(x.size());
-	for (unsigned int i = 0; i < x.size(); ++i)
-	{
-		x_[i][0] = x[i][0];
-		x_[i][1] = x[i][1];
-		x_[i][2] = x[i][2];
-	}
-
-	std::vector<unsigned int> f_(f.size() * 3);
-	for (unsigned int i = 0; i < f.size(); ++i)
-	{
-		f_[3 * i] = f[i].posIndices[0] - 1;
-		f_[3 * i + 1] = f[i].posIndices[1] - 1;
-		f_[3 * i + 2] = f[i].posIndices[2] - 1;
-	}
-
-	std::vector<SPH::Vector3r> samples;
-
-	SPH::RegularTriangleSampling::sampleMesh(x.size(), &x_[0], f.size(), &f_[0], maxDistance, samples);
-
-	std::vector<Vector3r> points(samples.size());
-
-    Vector3r axisX(1.0, 0.0, 0.0);
-    Vector3r axisY(0.0, 1.0, 0.0);
-    Vector3r axisZ(0.0, 0.0, 1.0);
-	for (unsigned int i = 0; i < points.size(); ++i)
-	{
-		points[i].x = samples[i][0];
-		points[i].y = samples[i][1];
-		points[i].z = samples[i][2];
-
-        Vector4r tmp(points[i].x, points[i].y, points[i].z, 1.0);
-
-        Matrix4r rotM = glm::rotate(Matrix4r(1.0), rotate.x, axisX);
-        rotM = glm::rotate(rotM, rotate.y, axisY);
-        rotM = glm::rotate(rotM, rotate.z, axisZ);
-        
-        tmp = rotM * tmp;
-
-        points[i] = Vector3r(tmp.x, tmp.y, tmp.z);
-
-        points[i] += translate;
-	}
-
-	AkinciBoundaryModel *abm = new AkinciBoundaryModel();
-
-	abm -> init(points);
-
-	addBoundaryModel(abm);
-}
-
-FluidModel* Simulation::buildFluidBlock(Real radius, std::vector<FluidBlockInfo> fluidBlockInfo)
-{
-    Real dist = 2.0 * radius;
+    Real dist = 2.0 * getParticleRadius();
 
     std::vector<Vector3r> position;
     std::vector<Vector3r> velocity;
 
-    for (FluidBlockInfo block: fluidBlockInfo)
-    {    
-        block.origin.x -= dist * (block.nx - 0.5) * 0.5;
-        block.origin.y -= dist * (block.ny - 0.5) * 0.5;
-        block.origin.z -= dist * (block.nz - 0.5) * 0.5;
+    for (const BlockInfo & block: fluidBlocks)
+    {
+        Vector3i ppedge = floor((block.max - block.min) / dist + 1e-5);
 
-        for (unsigned i = 0; i < block.nx; ++i)
-            for (unsigned j = 0; j < block.ny; ++j)
-                for (unsigned k = 0; k < block.nz; ++k)
-                {
-                    Vector3r pos(i, j, k);
-                    pos *= dist;
-                    pos += block.origin;
+        for (int i = 0; i < ppedge.x; ++i)
+                for (int j = 0; j < ppedge.y; ++j)
+                    for (int k = 0; k < ppedge.z; ++k)
+                    {
+                        Vector3r pos(i, j, k);
+                        pos *= dist;
+                        pos += block.min + getParticleRadius();
 
-                    position.push_back(pos);
-                    velocity.push_back(Vector3r(0.0));
-                }
+                        position.push_back(pos);
+                        velocity.push_back(Vector3r(0.0));
+                    }
     }
 
     addFluidModel(position, velocity);
@@ -451,41 +567,39 @@ void Simulation::printInfo()
     if (current_adhesion_method == AKINCI_ADHESION_METHOD)
         adhesionLabel = "Akinci adhesion method";    
 
-    /*std::cout << "--------------------------------------------------------------------------------------" << std::endl;
-    std::cout << "Launching simulation with the following configuration:" << std::endl;
-    std::cout << "Number of fluid models:      " << numberFluidModels() << " fm" << std::endl;
-    std::cout << "Number of boundary models:   " << numberBoundaryModels() << " bm" << std::endl;
-    for (unsigned int i = 0; i < numberFluidModels(); ++i)
-        std::cout << "Number of particles in fm " + std::to_string(i + 1) + ": " << getFluidModel(i) -> getNumParticles() << " particles" << std::endl;
-    for (unsigned int i = 0; i < numberBoundaryModels(); ++i)
-        std::cout << "Number of particles in bm " + std::to_string(i + 1) + ": " << getBoundaryModel(i) -> getNumParticles() << " particles" << std::endl;
-    std::cout << "Pressure solver:             " << solverLabel << std::endl;
-    std::cout << "Boundary handling method:    " << bhLabel << std::endl;
-    std::cout << "Viscosity method:            " << viscoLabel << std::endl;
-    std::cout << "Surface tension method:      " << surftenLabel << std::endl;
-    std::cout << "Adhesion method:             " << adhesionLabel << std::endl;
-    std::cout << "Particle radius:             " << particleRadius << " m " << std::endl;
-    std::cout << "Support radius:              " << supportRadius << " m " << std::endl;
-    std::cout << "Gravity:                     " << "(" << gravity.x << ", " << gravity.y << ", " << gravity.z << ") m/s^2" << std::endl;
-    std::cout << "--------------------------------------------------------------------------------------" << std::endl << std::endl;
-    std::cout << "Press any key to start the simulation" << std::endl;
-    getchar();*/
     LOG("--------------------------------------------------------------------------------------");
     LOG("Launching simulation with the following configuration:");
-    LOG("Number of fluid models:      ", numberFluidModels(), " fm");
-    LOG("Number of boundary models:   ", numberBoundaryModels(), " bm");
+    LOG("Number of fluid models:         ", numberFluidModels(), " fm");
+    LOG("Number of boundary models:      ", numberBoundaryModels(), " bm");
     for (unsigned int i = 0; i < numberFluidModels(); ++i)
-        LOG("Number of particles in fm ", i + 1,  ": ", getFluidModel(i) -> getNumParticles(), " particles");
+        LOG("Number of particles in fm ", i + 1,  ":    ", getFluidModel(i) -> getNumParticles(), " particles");
     for (unsigned int i = 0; i < numberBoundaryModels(); ++i)
-        LOG("Number of particles in bm ", i + 1, ": ", getBoundaryModel(i) -> getNumParticles(), " particles");
-    LOG("Pressure solver:             " , solverLabel);
-    LOG("Boundary handling method:    " , bhLabel);
-    LOG("Viscosity method:            " , viscoLabel);
-    LOG("Surface tension method:      " , surftenLabel);
-    LOG("Adhesion method:             " , adhesionLabel);
-    LOG("Particle radius:             " , particleRadius, " m");
-    LOG("Support radius:              " , supportRadius, " m");
-    LOG("Gravity:                     " , "(" , gravity.x , "," , gravity.y , "," , gravity.z , ") m/s^2");
+        LOG("Number of particles in bm ", i + 1, ":    ", getBoundaryModel(i) -> getNumParticles(), " particles");
+    LOG("Pressure solver:                " , solverLabel);
+    if (current_method == WCSPH_METHOD)
+    {
+        WCSPHSolver *currentSolver = static_cast<WCSPHSolver*>(solver);
+        LOG("Stiffness:                      ", currentSolver -> getStiffness());
+        LOG("Gamma:                          ", currentSolver -> getGamma());
+    }
+    else if (current_method == PCISPH_METHOD)
+    {
+        PCISPHSolver *currentSolver = static_cast<PCISPHSolver*>(solver);
+        LOG("Max. allowed density error:     ", currentSolver -> getMaxError());
+    }
+    else if (current_method == DFSPH_METHOD)
+    {
+        DFSPHSolver *currentSolver = static_cast<DFSPHSolver*>(solver);
+        LOG("Max. allowed density error:     ", currentSolver -> getMaxError());
+        LOG("Max. allowed divergence error:  ", currentSolver -> getMaxErrorV());
+    }
+    LOG("Boundary handling method:       ", bhLabel);
+    LOG("Viscosity method:               ", viscoLabel);
+    LOG("Surface tension method:         ", surftenLabel);
+    LOG("Adhesion method:                ", adhesionLabel);
+    LOG("Particle radius:                ", particleRadius, " m");
+    LOG("Support radius:                 ", supportRadius, " m");
+    LOG("Gravity:                        ", "(" , gravity.x , "," , gravity.y , "," , gravity.z , ") m/s^2");
     LOG("--------------------------------------------------------------------------------------");
     LOG();
     LOG("Press any key to start the simulation");
