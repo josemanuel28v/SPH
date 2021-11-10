@@ -6,7 +6,7 @@ Implementación de las técnicas WCSPH, PCISPH y DFSPH.
 
 El proyecto está basado en CMake por lo que utilizando esta herramienta se generan los Makefiles necesarios para compilar el código.
 
-# Surface samping
+# Surface sampling
 
 Para samplear la superficie de cuerpos rigidos se utiliza el código de la biblioteca SPlisHSPlasH.
 
