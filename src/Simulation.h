@@ -61,12 +61,16 @@ struct SceneInfo
     Real eta;
     Real etaV;
     Real cflFactor;
+    unsigned int minIterations;
+    unsigned int maxIterations;
+    unsigned int minIterationsV;
+    unsigned int maxIterationsV;
 };
 
 struct BlockInfo
 {
-    Vector3r min; // fluid block
-    Vector3r max; // fluid block
+    Vector3r min; 
+    Vector3r max; 
 };
 
 struct EmitterInfo
@@ -75,18 +79,18 @@ struct EmitterInfo
     unsigned int numParticles; 
     Vector3r r;
     Real v; 
-    Quat4r rot; // Cuando se aclare la forma de dar la orientacion desde blender
+    Quat4r rot; 
     Real startTime; 
-    Real width; // Si el tipo es circular el radio sera width
+    Real width; 
     Real height;
     Real spacing;
 };
 
-struct Fluid // Representa un fluidModel en la misma fase que puede inicializarse con fluidBlocks geometrias de volumen y emisores
+struct Fluid // Representa un fluidModel en la misma fase
 {
     std::vector<BlockInfo> fluidBlocks;
     std::vector<EmitterInfo> emitters;
-    //std::vector<> geometries; // Conjunto de geometrias que seran sampleadas (volumen)
+    //std::vector<> geometries;
 
     Real viscosity;
     Real boundaryViscosity;
@@ -141,7 +145,6 @@ struct SimulationInfo
 /**
  * @brief Clase singleton para controlar la simulacion actual, parametros generales y lectura y escritura en ficheros
  */
-
 class Simulation
 {
     private:

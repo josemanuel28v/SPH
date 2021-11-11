@@ -25,12 +25,14 @@ class DFSPHSolver: public SPHSolver
 
         unsigned int sumIterationsV;
         unsigned int minIterationsV;
+        unsigned int maxIterationsV;
         unsigned int iterationsV;
         
         Real eps;
 
     public:
 
+        DFSPHSolver();
         void init();
         void step();
 
@@ -48,7 +50,12 @@ class DFSPHSolver: public SPHSolver
 
         void setCFLFactor(Real factor) { cflFactor = factor; }
         void setMaxErrorV(Real etaV) { maxErrorV = etaV; }
+        void setMinIterationsV(unsigned int minIt) { minIterationsV = minIt; }
+        void setMaxIterationsV(unsigned int maxIt) { maxIterationsV = maxIt; }
+
         Real getMaxErrorV() { return maxErrorV; }
+        unsigned int getMinIterationsV() { return minIterationsV; }
+        unsigned int getMaxIterationsV() { return maxIterationsV; }
 
         Real & getAlpha(const unsigned int fmIndex, const unsigned int i) { return alpha[fmIndex][i]; }
         Real & getDivError(const unsigned int fmIndex, const unsigned int i) { return divError[fmIndex][i]; }

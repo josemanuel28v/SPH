@@ -39,10 +39,14 @@ class SPHSolver
         virtual void resizeData() = 0;
 
         void setMaxError(Real error) { maxError = error; }
+        void setMinIterations(unsigned int minIt) { minIterations = minIt; }
+        void setMaxIterations(unsigned int maxIt) { maxIterations = maxIt; }
 
         Real getMaxError() { return maxError; }
         Real getMaxVel() { return maxVel; }
         unsigned int getSteps() { return steps; }
+        unsigned int getMinIterations() { return minIterations; }
+        unsigned int getMaxIterations() { return maxIterations; }
 };
 
 #endif

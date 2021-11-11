@@ -7,3 +7,4 @@ CMakeCache.txt
 SPH
 Makefile
 /data
+/blender_addon/sph_solver_addon

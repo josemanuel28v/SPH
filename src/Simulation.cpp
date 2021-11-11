@@ -364,6 +364,8 @@ bool Simulation::importScene(std::string path)
     {
         PCISPHSolver *pcisph = static_cast<PCISPHSolver*>(getSolver());
         pcisph -> setMaxError(sceneData.eta);
+        pcisph -> setMinIterations(sceneData.minIterations);
+        pcisph -> setMaxIterations(sceneData.maxIterations);
     }
     else if (sceneData.simulationMethod == DFSPH_METHOD)
     {
@@ -371,6 +373,10 @@ bool Simulation::importScene(std::string path)
         dfsph -> setMaxError(sceneData.eta);
         dfsph -> setMaxErrorV(sceneData.etaV);
         dfsph -> setCFLFactor(sceneData.cflFactor);
+        dfsph -> setMinIterations(sceneData.minIterations);
+        dfsph -> setMaxIterations(sceneData.maxIterations);
+        dfsph -> setMinIterationsV(sceneData.minIterationsV);
+        dfsph -> setMaxIterationsV(sceneData.maxIterationsV);
     }
 
     // Fluid info
@@ -586,12 +592,18 @@ void Simulation::printInfo()
     {
         PCISPHSolver *currentSolver = static_cast<PCISPHSolver*>(solver);
         LOG("Max. allowed density error:     ", currentSolver -> getMaxError());
+        LOG("Min. iterations:                ", currentSolver -> getMinIterations());
+        LOG("Max. iterations:                ", currentSolver -> getMaxIterations());
     }
     else if (current_method == DFSPH_METHOD)
     {
         DFSPHSolver *currentSolver = static_cast<DFSPHSolver*>(solver);
         LOG("Max. allowed density error:     ", currentSolver -> getMaxError());
         LOG("Max. allowed divergence error:  ", currentSolver -> getMaxErrorV());
+        LOG("Min. density iterations:        ", currentSolver -> getMinIterations());
+        LOG("Max. density iterations:        ", currentSolver -> getMaxIterations());
+        LOG("Min divergence iterations:      ", currentSolver -> getMinIterationsV());
+        LOG("Max divergence iterations:      ", currentSolver -> getMaxIterationsV());
     }
     LOG("Boundary handling method:       ", bhLabel);
     LOG("Viscosity method:               ", viscoLabel);

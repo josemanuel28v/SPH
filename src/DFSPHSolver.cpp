@@ -7,16 +7,22 @@
 #include "PCISPHBoundaryModel.h"
 #include "AkinciBoundaryModel.h"
 
-void DFSPHSolver::init()
+DFSPHSolver::DFSPHSolver() : SPHSolver()
 {
     // Iteraciones minimas segun el paper
     minIterations = 2; 
-    minIterationsV = 1; 
-
     maxIterations = 100;
-    sumIterationsV = 0;
-    cflFactor = 1.0;
+    sumIterations = 0;
 
+    minIterationsV = 1; 
+    maxIterationsV = 100;
+    sumIterationsV = 0;
+
+    cflFactor = 1.0;
+}
+
+void DFSPHSolver::init()
+{
     eps = 1e-5;
 
     resizeData();

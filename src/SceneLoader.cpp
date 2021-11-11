@@ -59,11 +59,19 @@ void SceneLoader::readSceneInfo(SimulationInfo & simData, json config)
         sceneData.gamma = config["Configuration"]["gamma"];
     }
     else if (sceneData.simulationMethod == Simulation::PCISPH_METHOD)
+    {
         sceneData.eta = config["Configuration"]["eta"];
+        sceneData.minIterations = config["Configuration"]["minIterations"];
+        sceneData.maxIterations = config["Configuration"]["maxIterations"];
+    }
     else if (sceneData.simulationMethod == Simulation::DFSPH_METHOD)
     {
         sceneData.eta = config["Configuration"]["eta"];
         sceneData.etaV = config["Configuration"]["etaV"];
+        sceneData.minIterations = config["Configuration"]["minIterations"];
+        sceneData.maxIterations = config["Configuration"]["maxIterations"];
+        sceneData.minIterationsV = config["Configuration"]["minIterationsV"];
+        sceneData.maxIterationsV = config["Configuration"]["maxIterationsV"];
     }
 }
 
