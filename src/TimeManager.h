@@ -43,6 +43,7 @@ class TimeManager
             time = 0.0;
             ts = 0.0001;
             frame = 1;
+            lastTimeSave = 0.0;
         }
 
         void setFrame(unsigned int frame) { this -> frame = frame; }
